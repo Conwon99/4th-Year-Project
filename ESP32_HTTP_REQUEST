@@ -1,0 +1,342 @@
+// Author: Connor Dorward
+// Title : eCook RM System Code
+// Board : ESP32 Wrover Module
+// Function : 
+
+
+//Library Declerations............................
+
+
+#include <ArduinoHttpClient.h> // For HTTP Communication
+
+
+#include "FS.h"     // SD Card
+#include "SD.h"
+#include <SPI.h>
+
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+
+
+// Pin Defenitions................................
+
+// TTGO T-Call pins
+#define MODEM_RST            5
+#define MODEM_PWKEY          4
+#define MODEM_POWER_ON       23
+#define MODEM_TX             27
+#define MODEM_RX             26
+#define I2C_SDA              21
+#define I2C_SCL              22
+
+
+
+
+
+
+// Your GPRS credentials (leave empty, if not needed)
+const char apn[]      = "orangeinternet"; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
+const char gprsUser[] = ""; // GPRS User
+const char gprsPass[] = ""; // GPRS Password
+
+// SIM card PIN (leave empty, if not defined)
+const char simPIN[]   = ""; 
+
+
+// Server details
+// The server variable can be just a domain name or it can have a subdomain. It depends on the service you are using
+
+const char server[] = "script.google.com"; // domain name: example.com, maker.ifttt.com, etc
+
+
+//URL : https://script.google.com/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=3.00&Iin=2&Iout=5
+
+
+
+const char orig_resource[150] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?";
+char resource[150] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?"; //must be pre-defined buffer
+const int  port = 443;                             // server port number
+
+
+
+char QualArray[4][30] = {"","","",""};     // [Qparam][charnum]
+
+char VbatQuery[15] = "Vbat=";
+char IinQuery[15] = "&Iin=2";
+char IoutQuery[15] = "&Iout=5";
+char CookerQuery[20] = "&Cooker=";
+char MealQuery[15] = "&Meal=";
+char PortionQuery[15] = "&Portion=";
+char MethodQuery[15] = "&Method=";
+
+int Qparam=0;
+int charnum = 0;
+
+
+
+
+// SIM800L defenitions.........................................................
+
+
+// Set serial for debug console (to Serial Monitor, default speed 115200)
+#define SerialMon Serial
+// Set serial for AT commands (to SIM800 module)
+#define SerialAT Serial1
+
+
+
+// Configure TinyGSM library
+#define TINY_GSM_MODEM_SIM800      // Modem is SIM800
+#define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
+
+// Define the serial console for debug prints, if needed
+//#define DUMP_AT_COMMANDS
+
+// NEEDS TO BE AFTER MODEM CONFIGURATION!!
+#include <TinyGsmClient.h> // For Establishing GSM/GPRS connection
+#include <Wire.h>  // Allows use of I2C Bus (SIM800L & OLED)
+
+#ifdef DUMP_AT_COMMANDS
+  #include <StreamDebugger.h>
+  StreamDebugger debugger(SerialAT, SerialMon);
+  TinyGsm modem(debugger);
+#else
+  TinyGsm modem(SerialAT);
+#endif
+
+
+// I2C for SIM800 (to keep it running when powered from battery)
+TwoWire I2CPower = TwoWire(0);
+
+
+
+// TinyGSM Client for Internet connection
+TinyGsmClientSecure client(modem);
+HttpClient          http(client, server, port);
+
+#define uS_TO_S_FACTOR 1000000     /* Conversion factor for micro seconds to seconds */
+#define TIME_TO_SLEEP  3600        /* Time ESP32 will go to sleep (in seconds) 3600 seconds = 1 hour */
+
+#define IP5306_ADDR          0x75
+#define IP5306_REG_SYS_CTL0  0x00
+
+bool setPowerBoostKeepOn(int en){
+  I2CPower.beginTransmission(IP5306_ADDR);
+  I2CPower.write(IP5306_REG_SYS_CTL0);
+  if (en) {
+    I2CPower.write(0x37); // Set bit1: 1 enable 0 disable boost keep on
+  } else {
+    I2CPower.write(0x35); // 0x37 is default reg value
+  }
+  return I2CPower.endTransmission() == 0;
+}
+
+
+void setupSIM800L() {
+
+// Start I2C communication
+  I2CPower.begin(I2C_SDA, I2C_SCL, 400000);
+ 
+  // Keep power when running from battery
+  bool isOk = setPowerBoostKeepOn(1);
+  SerialMon.println(String("IP5306 KeepOn ") + (isOk ? "OK" : "FAIL"));
+
+  // Set modem reset, enable, power pins
+  pinMode(MODEM_PWKEY, OUTPUT);
+  pinMode(MODEM_RST, OUTPUT);
+  pinMode(MODEM_POWER_ON, OUTPUT);
+  digitalWrite(MODEM_PWKEY, LOW);
+  digitalWrite(MODEM_RST, HIGH);
+  digitalWrite(MODEM_POWER_ON, HIGH);
+
+  // Set GSM module baud rate and UART pins
+  SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  delay(3000);
+
+  // Restart SIM800 module, it takes quite some time
+  // To skip it, call init() instead of restart()
+  SerialMon.println("Initializing modem...");
+  modem.restart();
+  // use modem.init() if you don't need the complete restart
+
+  // Unlock your SIM card with a PIN if needed
+  if (strlen(simPIN) && modem.getSimStatus() != 3 ) {
+    modem.simUnlock(simPIN);
+  }
+
+
+}
+
+// Bluetooth 
+
+
+
+
+
+
+void CollectQualitativeData() {       // Takes 4 strings from android app and stores in QualArray[4][30]
+
+Qparam=0;
+charnum = 0;
+while(Qparam <4 ) {       // While Qualitative data has not been collected //QualDataCollected = 0
+
+if (SerialBT.available()){
+    char incomingChar = SerialBT.read();
+
+    if (QualArray[Qparam] !="" && incomingChar == '\n') {       // If the message isnt empty and the recieved char is nothing (ie if at end of word)   if (message !=""
+
+
+      Serial.println(QualArray[Qparam]);
+
+      
+      Qparam++;
+      charnum = 0;
+      
+      
+      
+      }
+    
+    if (incomingChar != '\n'){       // If the incomingChar is different than \n, concatenate that char character to QualArray.
+
+
+    if (charnum <30) {        // if greater than maximum specified array val then ignore
+     
+     
+      QualArray[Qparam][charnum] = incomingChar;
+   
+      charnum++;
+     
+    }
+      
+    }
+    else{
+      Serial.println("/n");
+     
+      
+    }
+    
+}
+delay(20);
+}
+}
+
+
+
+
+void AppendQueryParameters() { //Adds strings to query parameters of resource of URL
+
+
+strcat(resource,CookerQuery); // resource + String1 
+strcat(resource,QualArray[0]); 
+
+strcat(resource,MealQuery); // resource + String2
+strcat(resource,QualArray[1]); 
+
+strcat(resource,PortionQuery); // resource + String3
+strcat(resource,QualArray[2]); 
+
+strcat(resource,MethodQuery); // resource + String4
+strcat(resource,QualArray[3]); 
+
+
+//
+Serial.print("_");   // to see if any spaces 
+Serial.print(resource);  // prints /macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=3.00&Iin=2&Iout=5&Cooker=&Meal=Rice
+// &Portion=3&Method=Boil
+Serial.println("_");
+
+  
+}
+
+
+
+
+void setup() {
+  // Set serial monitor debugging window baud rate to 115200
+  SerialMon.begin(115200);
+SerialBT.begin("ESP32test"); //Bluetooth device name
+CollectQualitativeData();
+SerialBT.end(); //Bluetooth device name
+
+
+
+setupSIM800L();
+
+
+  // Configure the wake up source as timer wake up  
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+}
+
+
+void loop() {
+
+
+AppendQueryParameters();
+
+
+ 
+  SerialMon.print("Connecting to APN: ");
+  SerialMon.print(apn);
+  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
+    SerialMon.println(" fail");
+  }
+  else {
+    SerialMon.println(" OK");
+    
+    SerialMon.print("Connecting to ");
+    SerialMon.print(server);  
+    if (!client.connect(server, port)) {
+      SerialMon.println(" fail");
+    }
+    else {                          // CONNECTION TO SERVER SUCCESFUL
+      SerialMon.println(" OK");
+    
+      SerialMon.print(F("Performing HTTP GET request... "));
+      http.connectionKeepAlive();  // Currently, this is needed for HTTPS
+
+
+Serial.print("_");
+Serial.print(resource);
+Serial.println("_");
+
+  int err = http.get(resource);
+ 
+  strcpy(resource, orig_resource); // Set resource to original resource
+ 
+  
+  if (err != 0) {
+    SerialMon.println(F("failed to connect"));
+    delay(10000);
+    return;
+  }
+
+  int status = http.responseStatusCode();
+  SerialMon.print(F("Response status code: "));
+  SerialMon.println(status);
+  if (!status) {
+    delay(10000);
+    return;
+  }
+
+
+
+  // Shutdown
+
+  http.stop();
+  SerialMon.println(F("Server disconnected"));
+      SerialMon.println();
+   
+
+    
+    }
+  }
+   delay(5000);
+  // Put ESP32 into deep sleep mode (with timer wake up)
+  //esp_deep_sleep_start();
+}
