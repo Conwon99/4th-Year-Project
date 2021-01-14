@@ -1,0 +1,98 @@
+char resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?"; //must be pre-defined buffer
+char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil";
+char QualArray[5][30];     // [Qparam][charnum]
+
+char CookerQuery[20] = "&Cooker=";
+char MealQuery[15] = "&Meal=";
+char PortionQuery[15] = "&Portion=";
+char MethodQuery[15] = "&Method=";
+
+void CollectQualitativeData() {
+
+int Qparam=0;
+int charnum = 0;
+while(Qparam <4 ) {       // While Qualitative data has not been collected //QualDataCollected = 0
+
+if (SerialBT.available()){
+    char incomingChar = SerialBT.read();
+
+    if (QualArray[Qparam] !="" && incomingChar == '\n') {       // If the message isnt empty and the recieved char is nothing (ie if at end of word)   if (message !=""
+
+      Serial.print(QualArray[Qparam]);
+      Serial.print("_");
+      Serial.print("  length = ");
+      Serial.println(strlen(QualArray[Qparam]));
+      
+      Qparam++;
+      charnum = 0;
+      
+      
+      
+      }
+    
+    if (incomingChar != '\n'){       // If the incomingChar is different than \n, concatenate that char character to QualArray.
+
+
+    if (charnum <30) {        // if greater than maximum specified array val then ignore
+     
+      
+      QualArray[Qparam][charnum] = incomingChar;
+   
+      charnum++;
+     
+    }
+      
+    }
+    else{
+    }
+     
+}
+delay(20);
+}
+}
+
+
+
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("ESP32test"); //Bluetooth device name
+  //Serial.println("The device started, now you can pair it with bluetooth!");
+
+  CollectQualitativeData();
+  Serial.println("Complete");
+  Serial.println(QualArray[0]);
+  Serial.println(QualArray[1]);
+  Serial.println(QualArray[2]);
+  Serial.println(QualArray[3]);
+  Serial.println(QualArray[4]);
+
+strcat(resource,CookerQuery); // resource + Resource_variables
+strcat(resource,QualArray[0]); 
+
+strcat(resource,MealQuery); // resource + Resource_variables
+strcat(resource,QualArray[1]); 
+
+strcat(resource,PortionQuery); // resource + Resource_variables
+strcat(resource,QualArray[2]); 
+
+strcat(resource,MethodQuery); // resource + Resource_variables
+strcat(resource,QualArray[3]); 
+
+
+Serial.print("resource=_");
+Serial.print(resource);
+Serial.println("_");
+
+Serial.print("staticresource=_");
+Serial.print(staticresource);
+Serial.println("_");
+
+Serial.print("length static=");
+Serial.println(strlen(staticresource));
+
+Serial.print("length resource=");
+Serial.println(strlen(resource));
+
+  
+}
