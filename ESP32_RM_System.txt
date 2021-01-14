@@ -1,0 +1,601 @@
+// Author: Connor Dorward
+// Title : eCook RM System Code
+// Board : ESP32 Wrover Module
+// Function : 
+
+
+// To do... put variables into resource GET request
+//          printing variables out to screen / Reduce update time
+//          Google Sheets manipulation
+//          Writing the voltage divider and current sensor code
+//          look into protecting against removal of components
+// 
+
+//Library Declerations............................
+
+
+#include <ArduinoHttpClient.h> // For HTTP Communication
+
+
+#include "FS.h"     // SD Card
+#include "SD.h"
+#include <SPI.h>
+
+#include <Adafruit_SSD1306.h> //OLED
+#include <Adafruit_GFX.h>
+
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+
+
+// Pin Defenitions................................
+
+// TTGO T-Call pins
+#define MODEM_RST            5
+#define MODEM_PWKEY          4
+#define MODEM_POWER_ON       23
+#define MODEM_TX             27
+#define MODEM_RX             26
+#define I2C_SDA              21
+#define I2C_SCL              22
+
+// SD Pins      // Vcc=5V
+SPIClass sdSPI(HSPI);
+#define SD_CS 33
+#define SD_SCLK 25
+#define SD_MISO 12
+#define SD_MOSI 13
+
+//Battery Monitoring
+
+#define Vdivider 2
+
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 32 // OLED display height, in pixels
+
+// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+
+// SCL = 22
+// SDA = 21
+
+
+//Cooking Diary Data - Bluetooth 
+
+int QualDataCollected = 0;
+char QualArray[4][30] = {"RC","Rice","5","Boil"};     // [Qparam][charnum]
+
+
+
+
+
+
+const int Vdivider_pin = Vdivider;
+int Vdiv_val = 0;
+float Vbat = 1;
+char CharVbat[5] = "";
+
+// Your GPRS credentials (leave empty, if not needed)
+const char apn[]      = "orangeinternet"; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
+const char gprsUser[] = ""; // GPRS User
+const char gprsPass[] = ""; // GPRS Password
+
+// SIM card PIN (leave empty, if not defined)
+const char simPIN[]   = ""; 
+
+//script.google.com/macros/s/AKfycbwCJdRt1LMQF5Tyi44yIrYQanjym0QVlX9DZ-6tR7_3IGr7ZoTL/exec
+
+
+// Server details
+// The server variable can be just a domain name or it can have a subdomain. It depends on the service you are using
+
+const char server[] = "script.google.com"; // domain name: example.com, maker.ifttt.com, etc
+
+//https://script.google.com/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=2&Iin=3&Iout=5&Cooker=RC&Meal=Rice&Portion=5&Method=Boil
+
+const char orig_resource[150] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?";
+char resource[150] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?"; //must be pre-defined buffer
+//char resource[] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=2&Iin=3&Iout=5&Cooker=RC&Meal=Rice&Portion=5&Method=Boil";
+//const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
+const int  port = 443;                             // server port number
+
+//char Resource_variables[50] = "Cooker="; // char array to append to the URL resource to include variables 
+//char VbatQuery[] = "Vbat=12";
+//char IinQuery[] = "&Iin=2";
+//char IoutQuery[] = "&Iout=5";
+//char CookerQuery[] = "&Cooker=";
+//char MealQuery[] = "&Meal=";
+//char PortionQuery[] = "&Portion=";
+//char MethodQuery[] = "&Method=";
+
+char VbatQuery[15] = "Vbat=";
+char IinQuery[15] = "&Iin=2";
+char IoutQuery[15] = "&Iout=5";
+char CookerQuery[20] = "&Cooker=";
+char MealQuery[15] = "&Meal=";
+char PortionQuery[15] = "&Portion=";
+char MethodQuery[15] = "&Method=";
+
+char Cooker[30] = "";
+char Meal[30] = "";
+char Portion[30] = "";
+char Method[30] = "";
+
+int Qparam=0;
+int charnum = 0;
+
+
+// Issue was changing server name in code resulted in guru meditation error
+
+//https://script.google.com/macros/s/AKfycbyHpIqYivf-mdTOU6eKUuo_7NH3H5Yb1pgin-NKQoxXbNvCTrYrgvY2ew/exec
+
+
+// new https://script.google.com/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec
+
+// https://docs.google.com/spreadsheets/d/e/2PACX-1vQTjkAdLMsl3c8cxudlLkrqzYlQLHTijn-rBqChgvIq11svMPeC-4Ce9O7H5PG1oz0St9bYeCb1p4I8/pubhtml
+String dataMessage;
+float Iin = 5.0;
+float Iout = 5.0;
+
+
+// SIM800L defenitions.........................................................
+
+
+// Set serial for debug console (to Serial Monitor, default speed 115200)
+#define SerialMon Serial
+// Set serial for AT commands (to SIM800 module)
+#define SerialAT Serial1
+
+
+
+// Configure TinyGSM library
+#define TINY_GSM_MODEM_SIM800      // Modem is SIM800
+#define TINY_GSM_RX_BUFFER   1024  // Set RX buffer to 1Kb
+
+// Define the serial console for debug prints, if needed
+//#define DUMP_AT_COMMANDS
+
+// NEEDS TO BE AFTER MODEM CONFIGURATION!!
+#include <TinyGsmClient.h> // For Establishing GSM/GPRS connection
+#include <Wire.h>  // Allows use of I2C Bus (SIM800L & OLED)
+
+#ifdef DUMP_AT_COMMANDS
+  #include <StreamDebugger.h>
+  StreamDebugger debugger(SerialAT, SerialMon);
+  TinyGsm modem(debugger);
+#else
+  TinyGsm modem(SerialAT);
+#endif
+
+
+// I2C for SIM800 (to keep it running when powered from battery)
+TwoWire I2CPower = TwoWire(0);
+
+
+
+// TinyGSM Client for Internet connection
+TinyGsmClientSecure client(modem);
+HttpClient          http(client, server, port);
+
+#define uS_TO_S_FACTOR 1000000     /* Conversion factor for micro seconds to seconds */
+#define TIME_TO_SLEEP  3600        /* Time ESP32 will go to sleep (in seconds) 3600 seconds = 1 hour */
+
+#define IP5306_ADDR          0x75
+#define IP5306_REG_SYS_CTL0  0x00
+
+bool setPowerBoostKeepOn(int en){
+  I2CPower.beginTransmission(IP5306_ADDR);
+  I2CPower.write(IP5306_REG_SYS_CTL0);
+  if (en) {
+    I2CPower.write(0x37); // Set bit1: 1 enable 0 disable boost keep on
+  } else {
+    I2CPower.write(0x35); // 0x37 is default reg value
+  }
+  return I2CPower.endTransmission() == 0;
+}
+
+
+void setupSIM800L() {
+
+// Start I2C communication
+  I2CPower.begin(I2C_SDA, I2C_SCL, 400000);
+ 
+  // Keep power when running from battery
+  bool isOk = setPowerBoostKeepOn(1);
+  SerialMon.println(String("IP5306 KeepOn ") + (isOk ? "OK" : "FAIL"));
+
+  // Set modem reset, enable, power pins
+  pinMode(MODEM_PWKEY, OUTPUT);
+  pinMode(MODEM_RST, OUTPUT);
+  pinMode(MODEM_POWER_ON, OUTPUT);
+  digitalWrite(MODEM_PWKEY, LOW);
+  digitalWrite(MODEM_RST, HIGH);
+  digitalWrite(MODEM_POWER_ON, HIGH);
+
+  // Set GSM module baud rate and UART pins
+  SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  delay(3000);
+
+  // Restart SIM800 module, it takes quite some time
+  // To skip it, call init() instead of restart()
+  SerialMon.println("Initializing modem...");
+  modem.restart();
+  // use modem.init() if you don't need the complete restart
+
+  // Unlock your SIM card with a PIN if needed
+  if (strlen(simPIN) && modem.getSimStatus() != 3 ) {
+    modem.simUnlock(simPIN);
+  }
+
+
+}
+
+// Bluetooth 
+
+
+
+
+char incomingChar;
+
+void CollectQualitativeData() {
+
+Qparam=0;
+charnum = 0;
+while(Qparam <4 ) {       // While Qualitative data has not been collected //QualDataCollected = 0
+
+if (SerialBT.available()){
+    incomingChar = SerialBT.read();
+
+    if (QualArray[Qparam] !="" && incomingChar == '\n') {       // If the message isnt empty and the recieved char is nothing (ie if at end of word)   if (message !=""
+
+      //QualArray[Qparam] = message;
+
+      //QualArray[Qparam][
+
+      Serial.println(QualArray[Qparam]);
+
+      
+      Qparam++;
+      charnum = 0;
+      
+      //Serial.println(Qparam);
+      
+      }
+    
+    if (incomingChar != '\n'){       // If the incomingChar is different than \n, concatenate that char character to QualArray.
+
+
+    if (charnum <30) {        // if greater than maximum specified array val then ignore
+     
+      //message += String(incomingChar);
+      QualArray[Qparam][charnum] = incomingChar;
+   
+      charnum++;
+      //Serial.print(incomingChar);
+    }
+      
+    }
+    else{
+      Serial.println("/n");
+     
+      //message = "";
+    }
+    //Serial.write(incomingChar); 
+}
+delay(20);
+}
+}
+
+
+
+
+
+
+
+
+
+
+//................SD Card Functions......................................
+int SDfail=0;
+
+void setupSD() {
+  
+  Serial.println("Initializing SD card...");
+sdSPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+if (!SD.begin(SD_CS, sdSPI)) {
+
+Serial.println("Card Mount Failed");
+
+SDfail=1;
+
+}
+
+else
+
+{
+Serial.println("Success");
+SDfail = 0;
+}
+uint8_t cardType = SD.cardType();
+if(cardType == CARD_NONE) {
+  Serial.println("No SD card attached");
+
+SDfail=1;
+  
+}
+
+File file = SD.open("/data.txt");
+  if(!file) {
+    Serial.println("File doens't exist");
+    Serial.println("Creating file...");
+    writeFile(SD, "/data.txt", "Vbat, Iin, Iout \r\n");
+  }
+  else {
+    Serial.println("File already exists");  
+  }
+  file.close();
+  
+  
+  }
+
+
+
+void writeFile(fs::FS &fs, const char * path, const char * message) {
+  Serial.printf("Writing file: %s\n", path);
+
+  File file = fs.open(path, FILE_WRITE);
+  if(!file) {
+    Serial.println("Failed to open file for writing");
+    SDfail = 1;
+    return;
+  }
+  if(file.print(message)) {
+    Serial.println("File written");
+  } else {
+    Serial.println("Write failed");
+    SDfail = 1;
+  }
+  file.close();
+}
+
+
+void appendFile(fs::FS &fs, const char * path, const char * message) {
+  Serial.printf("Appending to file: %s\n", path);
+
+  File file = fs.open(path, FILE_APPEND);
+  if(!file) {
+    Serial.println("Failed to open file for appending");
+    SDfail = 1;
+    return;
+  }
+  if(file.print(message)) {
+    Serial.println("Message appended");
+  } else {
+    Serial.println("Append failed");
+    SDfail = 1;
+  }
+  file.close();
+}
+
+
+
+void logSDCard() {
+  dataMessage = String(Vbat) + "," + String(Iin) + "," + String(Iout)+ "\r\n";
+  Serial.print("Save data: ");
+  Serial.println(dataMessage);
+  appendFile(SD, "/data.txt", dataMessage.c_str());
+}
+
+//// OLED Functions
+
+
+void setupDisplay () {
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) // Address 0x3C for 128x32
+  
+  { 
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+
+  }
+
+  
+}
+
+
+void displayText() {
+
+
+display.clearDisplay();
+
+  display.setTextSize(1); // Draw 2X-scale text
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+
+  display.println(Vbat);
+  display.display();      // Show initial text
+
+  
+}
+
+
+void AppendQueryParameters() {
+
+
+
+dtostrf(Vbat, 4, 2, CharVbat); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
+
+strcpy(Cooker,QualArray[0]);
+strcpy(Meal,QualArray[1]);
+strcpy(Portion,QualArray[2]);
+strcpy(Method,QualArray[3]);
+
+
+strcat(resource, VbatQuery); 
+strcat(resource, CharVbat);
+Vbat++;
+
+strcat(resource, IinQuery); 
+
+strcat(resource, IoutQuery); 
+
+strcat(resource,CookerQuery); // resource + Resource_variables
+strcat(resource,Cooker); 
+
+strcat(resource,MealQuery); // resource + Resource_variables
+strcat(resource,Meal); 
+
+strcat(resource,PortionQuery); // resource + Resource_variables
+strcat(resource,Portion); 
+
+strcat(resource,MethodQuery); // resource + Resource_variables
+strcat(resource,Method); 
+
+
+//
+Serial.print("_");
+Serial.print(resource);
+Serial.println("_");
+//strcpy(resource, orig_resource);   //this doesnt work.. see whats happening in a more simple program
+//resource[] = orig_resource[]; 
+  
+}
+
+
+
+
+void setup() {
+  // Set serial monitor debugging window baud rate to 115200
+  SerialMon.begin(115200);
+SerialBT.begin("ESP32test"); //Bluetooth device name
+CollectQualitativeData();
+SerialBT.end(); //Bluetooth device name
+//CollectQualitativeData();
+//  Serial.println("Complete");
+//  Serial.println(QualArray[0]);
+//  Serial.println(QualArray[1]);
+//  Serial.println(QualArray[2]);
+//  Serial.println(QualArray[3]);
+//  Serial.println(QualArray[4]);
+
+//setupSD();
+setupSIM800L();
+//setupDisplay();
+
+  // Configure the wake up source as timer wake up  
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+}
+
+
+void loop() {
+
+//if (SDfail ==1) {
+//  setupSD();
+//
+//  }
+//
+//
+//  Vdiv_val = analogRead(Vdivider_pin);
+//  Vbat = Vdiv_val * (3.3/4095);
+//  Serial.println(Vdiv_val);
+//  Serial.println(Vbat);
+//  Serial.println("");
+//
+//   logSDCard();
+//   displayText();
+//   
+
+
+AppendQueryParameters();
+
+
+ 
+  SerialMon.print("Connecting to APN: ");
+  SerialMon.print(apn);
+  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
+    SerialMon.println(" fail");
+  }
+  else {
+    SerialMon.println(" OK");
+    
+    SerialMon.print("Connecting to ");
+    SerialMon.print(server);
+    if (!client.connect(server, port)) {
+      SerialMon.println(" fail");
+    }
+    else {                          // CONNECTION TO SERVER SUCCESFUL
+      SerialMon.println(" OK");
+    
+      SerialMon.print(F("Performing HTTP GET request... "));
+      http.connectionKeepAlive();  // Currently, this is needed for HTTPS
+      
+Serial.print("_");
+Serial.print(resource);
+Serial.println("_");
+
+  int err = http.get(resource);
+ 
+  strcpy(resource, orig_resource); // Set resource to original resource
+ // Serial.println(resource);
+  
+  if (err != 0) {
+    SerialMon.println(F("failed to connect"));
+    delay(10000);
+    return;
+  }
+
+  int status = http.responseStatusCode();
+  SerialMon.print(F("Response status code: "));
+  SerialMon.println(status);
+  if (!status) {
+    delay(10000);
+    return;
+  }
+
+ 
+/*
+//  SerialMon.println(F("Response Headers:"));
+//  while (http.headerAvailable()) {
+//    String headerName = http.readHeaderName();
+//    String headerValue = http.readHeaderValue();
+//    SerialMon.println("    " + headerName + " : " + headerValue);
+//  }
+//
+//  int length = http.contentLength();
+//  if (length >= 0) {
+//    SerialMon.print(F("Content length is: "));
+//    SerialMon.println(length);
+//  }
+//  if (http.isResponseChunked()) {
+//    SerialMon.println(F("The response is chunked"));
+//  }
+//
+//  String body = http.responseBody();
+//  SerialMon.println(F("Response:"));
+//  SerialMon.println(body);
+//
+//  SerialMon.print(F("Body length is: "));
+//  SerialMon.println(body.length());
+*/
+  // Shutdown
+
+  http.stop();
+  SerialMon.println(F("Server disconnected"));
+      SerialMon.println();
+   
+
+    
+    }
+  }
+   delay(5000);
+  // Put ESP32 into deep sleep mode (with timer wake up)
+  //esp_deep_sleep_start();
+}
