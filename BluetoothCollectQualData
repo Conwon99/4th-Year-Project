@@ -1,0 +1,189 @@
+//This example code is in the Public Domain (or CC0 licensed, at your option.)
+//By Evandro Copercini - 2018
+//
+//This example creates a bridge between Serial and Classical Bluetooth (SPP)
+//and also demonstrate that SerialBT have the same functionalities of a normal Serial
+
+#include "BluetoothSerial.h"
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+// Meal, Device,Method,Portion Size, Cooking Experience 
+
+
+char resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?"; //must be pre-defined buffer
+char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil";
+char QualArray[5][30];     // [Qparam][charnum]
+
+char CookerQuery[20] = "Cooker=";
+char MealQuery[15] = "&Meal=";
+char PortionQuery[15] = "&Portion=";
+char MethodQuery[15] = "&Method=";
+
+void CollectQualitativeData() {
+
+int Qparam=0;
+int charnum = 0;
+while(Qparam <4 ) {       // While Qualitative data has not been collected //QualDataCollected = 0
+
+if (SerialBT.available()){
+    char incomingChar = SerialBT.read();
+
+    if (QualArray[Qparam] !="" && incomingChar == '\n') {       // If the message isnt empty and the recieved char is nothing (ie if at end of word)   if (message !=""
+
+      //QualArray[Qparam] = message;
+        
+      //QualArray[Qparam][
+     // QualArray[Qparam][charnum] = '\0';
+      Serial.print(QualArray[Qparam]);
+      Serial.print("_");
+      Serial.print("  length = ");
+      Serial.println(strlen(QualArray[Qparam]));
+      
+      
+      Qparam++;
+      charnum = 0;
+      
+      //Serial.println(Qparam);
+      
+      }
+    
+    if (incomingChar != '\n'){       // If the incomingChar is different than \n, concatenate that char character to QualArray.
+
+
+   // if (charnum <31) {        // if greater than maximum specified array val then ignore
+     
+      int result;
+      result = iscntrl(incomingChar); // If not printable, = non-zero
+
+      if (result >0) {
+
+        Serial.print("CONTROL");
+        
+      }
+      else 
+
+      {
+
+      QualArray[Qparam][charnum] = incomingChar;
+      charnum++;
+        
+      }
+
+
+      
+      //Serial.print(incomingChar);
+  //  }
+      
+    }
+    else{
+      //Serial.println("");
+     
+      //message = "";
+    }
+     
+}
+delay(20);
+}
+}
+
+
+
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("ESP32test"); //Bluetooth device name
+  //Serial.println("The device started, now you can pair it with bluetooth!");
+
+  CollectQualitativeData();
+  Serial.println("Complete");
+  Serial.println(QualArray[0]);
+  Serial.println(QualArray[1]);
+  Serial.println(QualArray[2]);
+  Serial.println(QualArray[3]);
+  Serial.println(QualArray[4]);
+
+strcat(resource,CookerQuery); // resource + Resource_variables
+strcat(resource,QualArray[0]); 
+
+strcat(resource,MealQuery); // resource + Resource_variables
+strcat(resource,QualArray[1]); 
+
+strcat(resource,PortionQuery); // resource + Resource_variables
+strcat(resource,QualArray[2]); 
+
+strcat(resource,MethodQuery); // resource + Resource_variables
+strcat(resource,QualArray[3]); 
+
+
+for (int i=0;i <strlen(resource); i++) {
+
+ int controlchar = iscntrl(resource[i]);
+ int printable = isprint(resource[i]);
+ 
+if (controlchar >0) {
+
+Serial.print("CONTROL");
+  
+}
+else if (printable>0){
+
+  Serial.print(resource[i]);
+}
+else {
+
+Serial.print("NONPRINTABLE");
+  
+}
+
+  
+}
+
+
+
+Serial.println("");
+Serial.print("resource=_");
+Serial.print(resource);
+Serial.println("_");
+
+Serial.print("staticresource=_");
+Serial.print(staticresource);
+Serial.println("_");
+
+Serial.print("length static=");
+Serial.println(strlen(staticresource));
+
+Serial.print("length resource=");
+Serial.println(strlen(resource));
+
+
+int samestring = strcmp(resource, staticresource);
+    //printf("strcmp(str1, str2) = %d\n", result);
+
+if (samestring == 0) {
+
+Serial.println("SAME STRING");
+  
+}
+else {
+
+Serial.println("NOT SAME STRING");
+
+}
+
+  
+}
+
+void loop() {
+  
+
+
+  
+//AssignArray();
+//CollectQualitativeData();
+  delay(2000);
+}
