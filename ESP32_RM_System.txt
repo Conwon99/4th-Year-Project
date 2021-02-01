@@ -71,10 +71,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 //Cooking Diary Data - Bluetooth 
 
 int QualDataCollected = 0;
-char QualArray[4][30] = {"RC","Rice","5","Boil"};     // [Qparam][charnum]
-
-
-
+char QualArray[4][30] = {"","","",""};     // [Qparam][charnum]
 
 
 
@@ -101,20 +98,11 @@ const char server[] = "script.google.com"; // domain name: example.com, maker.if
 
 //https://script.google.com/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=2&Iin=3&Iout=5&Cooker=RC&Meal=Rice&Portion=5&Method=Boil
 
-const char orig_resource[150] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?";
-char resource[150] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?"; //must be pre-defined buffer
-//char resource[] = "/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=2&Iin=3&Iout=5&Cooker=RC&Meal=Rice&Portion=5&Method=Boil";
+const char orig_resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?";
+char resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?"; //must be pre-defined buffer
+char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Vbat=1.00&Iin=2&Iout=5&Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil";
 //const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
 const int  port = 443;                             // server port number
-
-//char Resource_variables[50] = "Cooker="; // char array to append to the URL resource to include variables 
-//char VbatQuery[] = "Vbat=12";
-//char IinQuery[] = "&Iin=2";
-//char IoutQuery[] = "&Iout=5";
-//char CookerQuery[] = "&Cooker=";
-//char MealQuery[] = "&Meal=";
-//char PortionQuery[] = "&Portion=";
-//char MethodQuery[] = "&Method=";
 
 char VbatQuery[15] = "Vbat=";
 char IinQuery[15] = "&Iin=2";
@@ -124,10 +112,6 @@ char MealQuery[15] = "&Meal=";
 char PortionQuery[15] = "&Portion=";
 char MethodQuery[15] = "&Method=";
 
-char Cooker[30] = "";
-char Meal[30] = "";
-char Portion[30] = "";
-char Method[30] = "";
 
 int Qparam=0;
 int charnum = 0;
@@ -256,12 +240,10 @@ if (SerialBT.available()){
 
     if (QualArray[Qparam] !="" && incomingChar == '\n') {       // If the message isnt empty and the recieved char is nothing (ie if at end of word)   if (message !=""
 
-      //QualArray[Qparam] = message;
-
-      //QualArray[Qparam][
-
-      Serial.println(QualArray[Qparam]);
-
+      Serial.print(QualArray[Qparam]);
+      Serial.print("_");
+      Serial.print("  length = ");
+      Serial.println(strlen(QualArray[Qparam]));
       
       Qparam++;
       charnum = 0;
@@ -273,18 +255,27 @@ if (SerialBT.available()){
     if (incomingChar != '\n'){       // If the incomingChar is different than \n, concatenate that char character to QualArray.
 
 
-    if (charnum <30) {        // if greater than maximum specified array val then ignore
-     
-      //message += String(incomingChar);
+      int result;
+      result = iscntrl(incomingChar); // If not printable, = non-zero
+
+      if (result >0) {
+
+        Serial.print("CONTROL");
+        
+      }
+      else 
+
+      {
+
       QualArray[Qparam][charnum] = incomingChar;
-   
       charnum++;
-      //Serial.print(incomingChar);
+        
+      }
     }
       
     }
     else{
-      Serial.println("/n");
+      //Serial.println("/n");
      
       //message = "";
     }
@@ -292,7 +283,7 @@ if (SerialBT.available()){
 }
 delay(20);
 }
-}
+
 
 
 
@@ -433,37 +424,32 @@ void AppendQueryParameters() {
 
 dtostrf(Vbat, 4, 2, CharVbat); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
 
-strcpy(Cooker,QualArray[0]);
-strcpy(Meal,QualArray[1]);
-strcpy(Portion,QualArray[2]);
-strcpy(Method,QualArray[3]);
-
 
 strcat(resource, VbatQuery); 
 strcat(resource, CharVbat);
-Vbat++;
+//Vbat++;
 
 strcat(resource, IinQuery); 
 
 strcat(resource, IoutQuery); 
 
 strcat(resource,CookerQuery); // resource + Resource_variables
-strcat(resource,Cooker); 
+strcat(resource,QualArray[0]); 
 
 strcat(resource,MealQuery); // resource + Resource_variables
-strcat(resource,Meal); 
+strcat(resource,QualArray[1]); 
 
 strcat(resource,PortionQuery); // resource + Resource_variables
-strcat(resource,Portion); 
+strcat(resource,QualArray[2]); 
 
 strcat(resource,MethodQuery); // resource + Resource_variables
-strcat(resource,Method); 
+strcat(resource,QualArray[3]); 
 
 
 //
-Serial.print("_");
-Serial.print(resource);
-Serial.println("_");
+
+Serial.println(resource);
+
 //strcpy(resource, orig_resource);   //this doesnt work.. see whats happening in a more simple program
 //resource[] = orig_resource[]; 
   
@@ -478,13 +464,6 @@ void setup() {
 SerialBT.begin("ESP32test"); //Bluetooth device name
 CollectQualitativeData();
 SerialBT.end(); //Bluetooth device name
-//CollectQualitativeData();
-//  Serial.println("Complete");
-//  Serial.println(QualArray[0]);
-//  Serial.println(QualArray[1]);
-//  Serial.println(QualArray[2]);
-//  Serial.println(QualArray[3]);
-//  Serial.println(QualArray[4]);
 
 //setupSD();
 setupSIM800L();
@@ -537,13 +516,20 @@ AppendQueryParameters();
       SerialMon.print(F("Performing HTTP GET request... "));
       http.connectionKeepAlive();  // Currently, this is needed for HTTPS
       
-Serial.print("_");
-Serial.print(resource);
-Serial.println("_");
+
+
+
 
   int err = http.get(resource);
+  memset(resource, 0, sizeof resource);
+
+  strcpy(resource,orig_resource);
+Serial.print("New Resource = ");
+Serial.println(resource);
+
+
  
-  strcpy(resource, orig_resource); // Set resource to original resource
+  //strcpy(resource, orig_resource); // Set resource to original resource
  // Serial.println(resource);
   
   if (err != 0) {
