@@ -1,91 +1,16 @@
-// Author: Connor Dorward
-// Title : eCook RM System Code
-// Board : ESP32 Wrover Module
-// Function : 
+/*
+  Rui Santos
+  Complete project details at https://RandomNerdTutorials.com/esp32-sim800l-publish-data-to-cloud/
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files.
+  
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+*/
+#include <ArduinoHttpClient.h>
 
 
-// To do... 
-//          printing variables out to screen / Reduce update time
-//          Using 1s timer
-//          Not displaying in interrupt displaying changing variable
-
-
-
-//          Google Sheets manipulation
-//          Writing the voltage divider and current sensor code
-//          look into protecting against removal of components
-// 
-
-//Library Declerations............................
-
-
-#include <ArduinoHttpClient.h> // For HTTP Communication
-
-
-#include "FS.h"     // SD Card
-#include "SD.h"
-#include <SPI.h>
-
-#include <Adafruit_SSD1306.h> //OLED
-#include <Adafruit_GFX.h>
-
-#include "BluetoothSerial.h"
-
-#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
-#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
-#endif
-
-BluetoothSerial SerialBT;
-
-
-
-
-
-// Pin Defenitions................................
-
-// TTGO T-Call pins
-#define MODEM_RST            5
-#define MODEM_PWKEY          4
-#define MODEM_POWER_ON       23
-#define MODEM_TX             27
-#define MODEM_RX             26
-#define I2C_SDA              21
-#define I2C_SCL              22
-
-// SD Pins      // Vcc=5V
-SPIClass sdSPI(HSPI);
-#define SD_CS 33
-#define SD_SCLK 25
-#define SD_MISO 12
-#define SD_MOSI 13
-
-//Battery Monitoring
-
-
-
-#define SCREEN_WIDTH 128 // OLED display width, in pixels
-#define SCREEN_HEIGHT 32 // OLED display height, in pixels
-
-// Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
-#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-
-// SCL = 22
-// SDA = 21
-
-
-//Cooking Diary Data - Bluetooth 
-
-int QualDataCollected = 0;
-char QualArray[4][30] = {"","","",""};     // [Qparam][charnum]
-
-
-
-
-volatile int Vdiv_ADCval = 0;
-const int Vdiv_GPIO = 2;
-volatile float Vbat = 1;
-char CharVbat[] = "";
 int count = 0;
 
 // Your GPRS credentials (leave empty, if not needed)
@@ -99,58 +24,28 @@ const char simPIN[]   = "";
 //script.google.com/macros/s/AKfycbwCJdRt1LMQF5Tyi44yIrYQanjym0QVlX9DZ-6tR7_3IGr7ZoTL/exec
 
 
-
-
-
-
 // Server details
 // The server variable can be just a domain name or it can have a subdomain. It depends on the service you are using
-
 const char server[] = "script.google.com"; // domain name: example.com, maker.ifttt.com, etc
-
-//https://script.google.com/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=2&Iin=3&Iout=5&Cooker=RC&Meal=Rice&Portion=5&Method=Boil
-
-const char orig_resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?";
-char resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?"; //must be pre-defined buffer
-char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Vbat=1.00&Iin=2&Iout=5&Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil";
-//const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
+const char resource[] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Vbat=1.00&Iin=2&Iout=5&Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil";         // resource path, for example: /post-data.php
 const int  port = 443;                             // server port number
 
-char VbatQuery[15] = "Vbat=";
-char IinQuery[15] = "&Iin=2";
-char IoutQuery[15] = "&Iout=5";
-char CookerQuery[20] = "&Cooker=";
-char MealQuery[15] = "&Meal=";
-char PortionQuery[15] = "&Portion=";
-char MethodQuery[15] = "&Method=";
 
 
-int Qparam=0;
-int charnum = 0;
-
-
-// Issue was changing server name in code resulted in guru meditation error
-
-//https://script.google.com/macros/s/AKfycbyHpIqYivf-mdTOU6eKUuo_7NH3H5Yb1pgin-NKQoxXbNvCTrYrgvY2ew/exec
-
-
-// new https://script.google.com/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec
-
-// https://docs.google.com/spreadsheets/d/e/2PACX-1vQTjkAdLMsl3c8cxudlLkrqzYlQLHTijn-rBqChgvIq11svMPeC-4Ce9O7H5PG1oz0St9bYeCb1p4I8/pubhtml
-String dataMessage;
-float Iin = 5.0;
-float Iout = 5.0;
-
-
-// SIM800L defenitions.........................................................
+// TTGO T-Call pins
+#define MODEM_RST            5
+#define MODEM_PWKEY          4
+#define MODEM_POWER_ON       23
+#define MODEM_TX             27
+#define MODEM_RX             26
+#define I2C_SDA              21
+#define I2C_SCL              22
 
 
 // Set serial for debug console (to Serial Monitor, default speed 115200)
 #define SerialMon Serial
 // Set serial for AT commands (to SIM800 module)
 #define SerialAT Serial1
-
-
 
 // Configure TinyGSM library
 #define TINY_GSM_MODEM_SIM800      // Modem is SIM800
@@ -159,9 +54,8 @@ float Iout = 5.0;
 // Define the serial console for debug prints, if needed
 //#define DUMP_AT_COMMANDS
 
-// NEEDS TO BE AFTER MODEM CONFIGURATION!!
-#include <TinyGsmClient.h> // For Establishing GSM/GPRS connection
-#include <Wire.h>  // Allows use of I2C Bus (SIM800L & OLED)
+#include <Wire.h>
+#include <TinyGsmClient.h>
 
 #ifdef DUMP_AT_COMMANDS
   #include <StreamDebugger.h>
@@ -198,10 +92,11 @@ bool setPowerBoostKeepOn(int en){
   return I2CPower.endTransmission() == 0;
 }
 
+void setup() {
+  // Set serial monitor debugging window baud rate to 115200
+  SerialMon.begin(115200);
 
-void setupSIM800L() {
-
-// Start I2C communication
+  // Start I2C communication
   I2CPower.begin(I2C_SDA, I2C_SCL, 400000);
  
   // Keep power when running from battery
@@ -232,312 +127,11 @@ void setupSIM800L() {
   }
 
 
-}
-
-// Bluetooth 
-
-
-
-
-char incomingChar;
-
-void CollectQualitativeData() {
-
-Qparam=0;
-charnum = 0;
-while(Qparam <4 ) {       // While Qualitative data has not been collected //QualDataCollected = 0
-
-if (SerialBT.available()){
-    incomingChar = SerialBT.read();
-
-    if (QualArray[Qparam] !="" && incomingChar == '\n') {       // If the message isnt empty and the recieved char is nothing (ie if at end of word)   if (message !=""
-
-      Serial.print(QualArray[Qparam]);
-      Serial.print("_");
-      Serial.print("  length = ");
-      Serial.println(strlen(QualArray[Qparam]));
-      
-      Qparam++;
-      charnum = 0;
-      
-      //Serial.println(Qparam);
-      
-      }
-    
-    if (incomingChar != '\n'){       // If the incomingChar is different than \n, concatenate that char character to QualArray.
-
-
-      int result;
-      result = iscntrl(incomingChar); // If not printable, = non-zero
-
-      if (result >0) {
-
-        //Serial.print("CONTROL");
-        
-      }
-      else 
-
-      {
-
-      QualArray[Qparam][charnum] = incomingChar;
-      charnum++;
-        
-      }
-    }
-      
-    }
-    else{
-      //Serial.println("/n");
-     
-      //message = "";
-    }
-    //Serial.write(incomingChar); 
-}
-delay(20);
-}
-
-
-//................SD Card Functions......................................
-int SDfail=0;
-
-void setupSD() {
-  
-  Serial.println("Initializing SD card...");
-sdSPI.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
-if (!SD.begin(SD_CS, sdSPI)) {
-
-Serial.println("Card Mount Failed");
-
-SDfail=1;
-
-}
-
-else
-
-{
-Serial.println("Success");
-SDfail = 0;
-}
-uint8_t cardType = SD.cardType();
-if(cardType == CARD_NONE) {
-  Serial.println("No SD card attached");
-
-SDfail=1;
-  
-}
-
-File file = SD.open("/data.txt");
-  if(!file) {
-    Serial.println("File doens't exist");
-    Serial.println("Creating file...");
-    writeFile(SD, "/data.txt", "Vbat, Iin, Iout \r\n");
-  }
-  else {
-    Serial.println("File already exists");  
-  }
-  file.close();
-  
-  
-  }
-
-
-
-void writeFile(fs::FS &fs, const char * path, const char * message) {
-  Serial.printf("Writing file: %s\n", path);
-
-  File file = fs.open(path, FILE_WRITE);
-  if(!file) {
-    Serial.println("Failed to open file for writing");
-    SDfail = 1;
-    return;
-  }
-  if(file.print(message)) {
-    Serial.println("File written");
-  } else {
-    Serial.println("Write failed");
-    SDfail = 1;
-  }
-  file.close();
-}
-
-
-void appendFile(fs::FS &fs, const char * path, const char * message) {
-  Serial.printf("Appending to file: %s\n", path);
-
-  File file = fs.open(path, FILE_APPEND);
-  if(!file) {
-    Serial.println("Failed to open file for appending");
-    SDfail = 1;
-    return;
-  }
-  if(file.print(message)) {
-    Serial.println("Message appended");
-  } else {
-    Serial.println("Append failed");
-    SDfail = 1;
-  }
-  file.close();
-}
-
-
-
-void logSDCard() {
-  dataMessage = String(Vbat) + "," + String(Iin) + "," + String(Iout)+ "\r\n";
-  Serial.print("Save data: ");
-  Serial.println(dataMessage);
-  appendFile(SD, "/data.txt", dataMessage.c_str());
-}
-
-//// OLED Functions
-
-
-void setupDisplay () {
-
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) // Address 0x3C for 128x32
-  
-  { 
-    Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
-
-  }
-
-  
-}
-
-
-void displayText() {
-
-display.clearDisplay();
-
-  display.setTextSize(1); // Draw 2X-scale text
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-
-  display.print("V = ");
-  display.print(Vbat);
-  
-  display.display();      // Show initial text
-
-}
-
-void AppendQueryParameters() {
-
-
-
-dtostrf(Vbat, 4, 2, CharVbat); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
-
-
-strcat(resource, VbatQuery); 
-strcat(resource, CharVbat);
-//Vbat++;
-
-strcat(resource, IinQuery); 
-
-strcat(resource, IoutQuery); 
-
-strcat(resource,CookerQuery); // resource + Resource_variables
-strcat(resource,QualArray[0]); 
-
-strcat(resource,MealQuery); // resource + Resource_variables
-strcat(resource,QualArray[1]); 
-
-strcat(resource,PortionQuery); // resource + Resource_variables
-strcat(resource,QualArray[2]); 
-
-strcat(resource,MethodQuery); // resource + Resource_variables
-strcat(resource,QualArray[3]); 
-
-
-//
-
-Serial.println(resource);
-
-//strcpy(resource, orig_resource);   //this doesnt work.. see whats happening in a more simple program
-//resource[] = orig_resource[]; 
-  
-}
-
-hw_timer_t * timer = NULL;
-
-void IRAM_ATTR onTimer()
-{
-
-  //Accumulate Vbat result and take average 
-
-  Vdiv_ADCval = analogRead(Vdiv_GPIO);
-  Vbat = Vdiv_ADCval * (3.3/4095);
-  Serial.println(Vbat);
-  
-  //Serial.println(Vbat);
-  
-}
-
-
-
-void setupTimer() {
-
-  // Use 1st timer of 4
-  // 1 tick take 1/(80MHZ/80) = 1us so we set divider 80 and count up 
-  timer = timerBegin(0, 80, true);
-
-  // Attach onTimer function to our timer 
-  timerAttachInterrupt(timer, &onTimer, true);
-
-  // Set alarm to call onTimer function every second 1 tick is 1us
- // => 1 second is 1000000us 
-  // Repeat the alarm (third parameter) 
-  timerAlarmWrite(timer, 1000000, true);
-
-  //Start an alarm 
-  timerAlarmEnable(timer);
-
-}
-
-
-
-void setup() {
-  // Set serial monitor debugging window baud rate to 115200
-
-setupDisplay();
-displayText();
-
-SerialMon.begin(115200);
- // SerialBT.begin("ESP32test"); //Bluetooth device name
- // CollectQualitativeData();
- // SerialBT.end(); //Bluetooth device name
-
-
-//setupSD();
-setupSIM800L();
-
-
-//setupTimer();
   // Configure the wake up source as timer wake up  
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); // POSSIBLE TIMER DISRUPTION??
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
 }
-
-
-// Pot : white -gnd
-//     : black adc
-//     : Brown 3.3v
 
 void loop() {
-
-
-  if (SDfail ==1) 
-  {
-    setupSD();
-  }
-
-  displayText();
- // logSDCard();
-
-
-
-
-  AppendQueryParameters();      //    IF ERROR REPLACE HERE
-
-
   SerialMon.print("Connecting to APN: ");
   SerialMon.print(apn);
   if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
@@ -551,30 +145,14 @@ void loop() {
     if (!client.connect(server, port)) {
       SerialMon.println(" fail");
     }
-    else {                          // CONNECTION TO SERVER SUCCESFUL
+    else {
       SerialMon.println(" OK");
     
       SerialMon.print(F("Performing HTTP GET request... "));
-
-      //AppendQueryParameters();
-      // Disable timer here??
-
-      
       http.connectionKeepAlive();  // Currently, this is needed for HTTPS
-      int err = http.get(resource);
-      memset(resource, 0, sizeof resource);
-
-      strcpy(resource,orig_resource);
-      Serial.print("New Resource = ");
-      Serial.println(resource);
-
-
- 
-  //strcpy(resource, orig_resource); // Set resource to original resource
- // Serial.println(resource);
-  
+  int err = http.get(resource);
   if (err != 0) {
-    SerialMon.println(F("failed to connect")); /// occurring
+    SerialMon.println(F("failed to connect"));
     delay(10000);
     return;
   }
@@ -587,48 +165,16 @@ void loop() {
     return;
   }
 
- 
+  // Shutdown
 
-//  SerialMon.println(F("Response Headers:"));
-//  while (http.headerAvailable()) {
-//    String headerName = http.readHeaderName();
-//    String headerValue = http.readHeaderValue();
-//    SerialMon.println("    " + headerName + " : " + headerValue);
-//  }
-//
-//  int length = http.contentLength();
-//  if (length >= 0) {
-//    SerialMon.print(F("Content length is: "));
-//    SerialMon.println(length);
-//  }
-//  if (http.isResponseChunked()) {
-//    SerialMon.println(F("The response is chunked"));
-//  }
-//
-//  String body = http.responseBody();
-//  SerialMon.println(F("Response:"));
-//  SerialMon.println(body);
-//
-//  SerialMon.print(F("Body length is: "));
-//  SerialMon.println(body.length());
+  http.stop();
+  SerialMon.println(F("Server disconnected"));
+      SerialMon.println();
+   
 
+     delay(5000);
     }
   }
-
-
-  
-   
-   http.stop();
-   SerialMon.println(F("Server disconnected"));
-   SerialMon.println();
-   
   // Put ESP32 into deep sleep mode (with timer wake up)
-  //esp_deep_sleep_start();
-
-       delay(5000);
-
-
-       
-    }
-   
-
+ // esp_deep_sleep_start();
+}
