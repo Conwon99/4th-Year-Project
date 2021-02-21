@@ -1,16 +1,20 @@
-function doGet(e) { 
+function doGet(e) 
+{ 
   Logger.log( JSON.stringify(e) );  // view parameters
   var result = 'Ok'; // assume success
-  if (e.parameter == 'undefined') {
+  if (e.parameter == 'undefined') 
+  {
     result = 'No Parameters';
   }
-  else {
+  else 
+  {
     var sheet_id = '1SCO1O9fMxWu7AC_HnG8A52A0Kz4f5mPd_om0JT2VKTw'; 		// Spreadsheet ID
     var sheet = SpreadsheetApp.openById(sheet_id).getActiveSheet();		// get Active sheet
     var newRow = sheet.getLastRow() + 1;						
     var rowData = [];
     rowData[0] = new Date(); 											// Timestamp in column A
-    for (var param in e.parameter) {
+    for (var param in e.parameter) 
+    {
       Logger.log('In for loop, param=' + param);
       var value = stripQuotes(e.parameter[param]);
       Logger.log(param + ':' + e.parameter[param]);
@@ -56,8 +60,18 @@ function doGet(e) {
     }
     Logger.log(JSON.stringify(rowData));
     // Write new row below
-    var newRange = sheet.getRange(newRow, 1, 1, rowData.length);
+    var newRange = sheet.getRange(newRow, 1, 1, rowData.length); 
     newRange.setValues([rowData]);
+
+    var chart = sheet.newChart()
+     .setChartType(Charts.ChartType.LINE)
+     .addRange(sheet.getRange(2,2,newRow.length,1)) // (Row, Column, NumRow,NumColumns)
+     .setPosition(5, 5, 0, 0)
+     .build();
+
+     sheet.insertChart(chart);
+
+
   }
   // Return result of operation
   return ContentService.createTextOutput(result);
