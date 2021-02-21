@@ -11,6 +11,9 @@ function doGet(e)
     var sheet_id = '1SCO1O9fMxWu7AC_HnG8A52A0Kz4f5mPd_om0JT2VKTw'; 		// Spreadsheet ID
     var sheet = SpreadsheetApp.openById(sheet_id).getActiveSheet();		// get Active sheet
     var newRow = sheet.getLastRow() + 1;						
+
+    //Logger.log(newRow.length);
+
     var rowData = [];
     rowData[0] = new Date(); 											// Timestamp in column A
     for (var param in e.parameter) 
@@ -63,9 +66,11 @@ function doGet(e)
     var newRange = sheet.getRange(newRow, 1, 1, rowData.length); 
     newRange.setValues([rowData]);
 
+
+
     var chart = sheet.newChart()
      .setChartType(Charts.ChartType.LINE)
-     .addRange(sheet.getRange(2,2,newRow.length,1)) // (Row, Column, NumRow,NumColumns)
+     .addRange(sheet.getRange(3,2,newRow,1)) // (Row, Column, NumRow,NumColumns)
      .setPosition(5, 5, 0, 0)
      .build();
 
