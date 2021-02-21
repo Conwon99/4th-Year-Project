@@ -22,9 +22,18 @@ function doGet(e)
 	  
 
     //Logger.log(newRow.length);
+    var timezone = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+    var date = new Date();
+
+  //  var time = date.getTime();
+    var time = Utilities.formatDate(new Date(), "GMT", "HH:mm:ss")
+   // var currentTime = date.getTime();
 
     var rowData = [];
-    rowData[0] = new Date(); 											// Timestamp in column A
+    
+    rowData[0] = date; 											// Timestamp in column A
+    rowData[1] = time;
+
     for (var param in e.parameter) 
     {
       Logger.log('In for loop, param=' + param);
@@ -32,36 +41,36 @@ function doGet(e)
       Logger.log(param + ':' + e.parameter[param]);
       switch (param) {
         case 'Vbat': //Parameter
-          rowData[1] = value; //Value in column B
+          rowData[2] = value; //Value in column B
           result = 'Written on column B';
           break;
         case 'Iin': //Parameter
-          rowData[2] = value; //Value in column C
+          rowData[3] = value; //Value in column C
           result += ' ,Written on column C';
           break;  
 
         case 'Iout': //Parameter
-          rowData[3] = value; //Value in column C
+          rowData[4] = value; //Value in column C
           result += ' ,Written on column D';
           break;  
 
         case 'Cooker': //Parameter
-          rowData[13] = value; //Value in column C
-          result += ' ,Written on column D';
-          break;
-
-        case 'Meal': //Parameter
-          rowData[14] = value; //Value in column C
-          result += ' ,Written on column D';
-          break;
-
-        case 'Portion': //Parameter
           rowData[15] = value; //Value in column C
           result += ' ,Written on column D';
           break;
 
-        case 'Method': //Parameter
+        case 'Meal': //Parameter
           rowData[16] = value; //Value in column C
+          result += ' ,Written on column D';
+          break;
+
+        case 'Portion': //Parameter
+          rowData[17] = value; //Value in column C
+          result += ' ,Written on column D';
+          break;
+
+        case 'Method': //Parameter
+          rowData[18] = value; //Value in column C
           result += ' ,Written on column D';
           break;
 
@@ -137,6 +146,7 @@ for (var i in charts) {
   var newChart = chart
       .modify()
       .addRange(sheet.getRange(3,2,newRow,1))
+      .addRange(sheet.getRange(3,3,newRow,1))
       .build();
   sheet.updateChart(newChart);
 }
@@ -187,11 +197,14 @@ function newChart()
 
     chart = sheet.newChart()
     .asLineChart()
+    .setOption("useFirstColumnAsDomain", true)
     .addRange(sheet.getRange(3,2,newRow,1))
+    .addRange(sheet.getRange(3,3,newRow,1))
+    .setNumHeaders(1)
     .setPosition(5, 5, 0, 0)
     .setOption("title", "Battery Voltage")
     .setOption("hAxis", {title: "Time"})
-    .setOption("vAxis", {title: "Voltage (V)"})
+    .setOption("vAxes", {0: {title: "Battery Voltage (V)"}})
     .build();
 
      sheet.insertChart(chart);
