@@ -1,4 +1,10 @@
 
+function getSpreadsheetData()
+{
+
+}
+
+
 function doGet(e) 
 { 
 
@@ -36,17 +42,23 @@ function doGet(e)
       switch (param) {
         case 'Vbat': //Parameter
           rowData[2] = value; //Value in column B
+
+          var Vbat = value;
           result = 'Written on column B';
           break;
-        case 'Iin': //Parameter
+
+        case 'Iout': //Parameter
           rowData[3] = value; //Value in column C
+
+          var Iout = value;
+          result += ' ,Written on column D';
+          break;  
+
+        case 'Iin': //Parameter
+          rowData[4] = value; //Value in column C
           result += ' ,Written on column C';
           break;  
 
-        case 'Iout': //Parameter
-          rowData[4] = value; //Value in column C
-          result += ' ,Written on column D';
-          break;  
 
         case 'Cooker': //Parameter
           rowData[15] = value; //Value in column C
@@ -73,38 +85,128 @@ function doGet(e)
           
       }
     }
+
+    var P_out = Vbat*Iout;
+    rowData[6] = P_out;
+
+
     Logger.log(JSON.stringify(rowData));
     // Write new row below
     var newRange = sheet.getRange(newRow, 1, 1, rowData.length); 
     newRange.setValues([rowData]);
 
 
+/*
+    var chart = sheet.newChart()
+     .setChartType(Charts.ChartType.LINE)
+     .addRange(sheet.getRange(3,2,newRow,1)) // (Row, Column, NumRow,NumColumns)
+     .setTitle('Battery Voltage')
+     .setXAxisTitle('Time')
+     .setYAxisTitle('Voltage (V)')
+     .setPosition(5, 5, 0, 0)
+     .build();
+*/
 
-// UPDATE CHART//////////////////////////////
+/*()
+  var chartDataRange = sheet.getRange(3,1,newRow,2);
 
-var charts = sheet.getCharts();
-for (var i in charts) {
-  var chart = charts[i];
-  var newChart = chart
-      .modify()
-      .addRange(sheet.getRange(3,2,newRow,1))
-      .addRange(sheet.getRange(3,3,newRow,1))
-      .build();
-  sheet.updateChart(newChart);
-}
+  var hAxisOptions = 
+  {
+    slantedText: true,
+    slantedTextAngle: 60,
+    gridlines: {
+      count: 12
+    }
+  }
+
+  var lineChartBuilder = sheet.newChart().asLineChart();
+  var chart = lineChartBuilder
+    .addRange(sheet.getRange(3,1,newRow,2))
+    .setPosition(5, 8, 0, 0)
+    .setTitle('Battery Voltage')
+    .setNumHeaders(1)
+    .setOption('hAxis', hAxisOptions)
+    .setOption("useFirstColumnAsDomain", true)
+    .build();
+
+*/
+/*
+  var lineChartBuilder = sheet.newChart().asLineChart();
+  var chart = lineChartBuilder
+    .addRange(sheet.getRange(3,2,newRow,1))
+    .setPosition(5, 8, 0, 0)
+    .setTitle('Battery Voltage')
+    .build();
+*/
 
 
-
-/*                                            // TRIED THIS TO UPDATE CHART AS WELL
-var chart = sheet.getCharts()[0];
-chart = chart.modify()
+/*
+var chart1 = sheet.getCharts()[0];
+chart1 = chart.modify()
     .addRange(sheet.getRange(3,1,newRow,2))
     .setOption('title', 'Battery Voltage')
     .setPosition(2,2,0,0)
     .build();
-sheet.updateChart(chart);
+sheet.updateChart(chart1);
 
 */
+/*
+var Voltagechart = sheet.getCharts()[0];
+
+  //var chart = charts[0];
+  var newChart = Voltagechart
+      .modify()
+
+      .addRange(sheet.getRange(3,2,newRow,1))
+      .addRange(sheet.getRange(3,3,newRow,1))
+      .build();
+  sheet.updateChart(newChart);
+
+*/
+
+//Update Voltage
+
+//var Voltagechart_range = sheet.getRange(3,2,newRow,2);
+
+var time_range = sheet.getRange(3,2,newRow,1);
+
+var Voltagechart = sheet.getCharts()[0];
+var Voltagechart_range = sheet.getRange(3,2,newRow,2);
+var ranges = Voltagechart.getRanges();
+Voltagechart = Voltagechart.modify();
+ranges.forEach(function(Voltagechart_range) {Voltagechart.removeRange(Voltagechart_range)});
+var modifiedChart = Voltagechart.addRange(Voltagechart_range).build();
+sheet.updateChart(modifiedChart);
+
+
+//Update Iout
+
+var Iout_range = sheet.getRange(3,4,newRow,1);
+
+var Ioutchart = sheet.getCharts()[1];
+//var Ioutrange = sheet.getRange(3,2,newRow,1).getRange(3,4,newRow,1);
+var ranges = Ioutchart.getRanges();
+Ioutchart = Ioutchart.modify();
+//ranges.forEach(function(Ioutrange) {Ioutchart.removeRange(time_range)});
+Ioutchart.removeRange(ranges[0]);
+Ioutchart.removeRange(ranges[1]);
+var modifiedChart = Ioutchart.addRange(time_range).addRange(Iout_range).build();
+sheet.updateChart(modifiedChart);
+
+
+
+//Update Pout
+
+var Poutrange = sheet.getRange(3,7,newRow,1);
+
+var Poutchart = sheet.getCharts()[2];
+var ranges = Poutchart.getRanges();
+Poutchart = Poutchart.modify();
+Poutchart.removeRange(ranges[0]);
+Poutchart.removeRange(ranges[1]);
+ranges.forEach(function(Poutrange) {Poutchart.removeRange(Poutrange)});
+var modifiedChart = Poutchart.addRange(Poutrange).build();
+sheet.updateChart(modifiedChart);
 
 
 
@@ -125,15 +227,15 @@ function onOpen(e) {
   // Add a custom menu to the spreadsheet.
   SpreadsheetApp.getUi() // Or DocumentApp, SlidesApp, or FormApp.
       .createMenu('Display Charts')
-      .addItem('Battery Voltage', 'newChart')
+      .addItem('Battery Voltage', 'newVoltageChart')
+      .addItem('Battery Output Current', 'newIoutChart')
+      .addItem('Battery Output Power', 'newPoutChart')
       .addToUi();
-
-
 
 }
 
 
-function newChart()
+function newVoltageChart()
 {
     var sheet_id = '1SCO1O9fMxWu7AC_HnG8A52A0Kz4f5mPd_om0JT2VKTw'; 		// Spreadsheet ID
     var sheet = SpreadsheetApp.openById(sheet_id).getActiveSheet();		// get Active sheet
@@ -153,3 +255,47 @@ function newChart()
 
      sheet.insertChart(chart);
 }
+
+
+function newIoutChart()
+{
+    var sheet_id = '1SCO1O9fMxWu7AC_HnG8A52A0Kz4f5mPd_om0JT2VKTw'; 		// Spreadsheet ID
+    var sheet = SpreadsheetApp.openById(sheet_id).getActiveSheet();		// get Active sheet
+    var newRow = sheet.getLastRow() + 1;			
+
+    Ioutchart = sheet.newChart()
+    .asLineChart()
+    .setOption("useFirstColumnAsDomain", true)
+    .addRange(sheet.getRange(3,2,newRow,1))
+    .addRange(sheet.getRange(3,4,newRow,1))
+    .setNumHeaders(1)
+    .setPosition(5, 5, 0, 0)
+    .setOption("title", "Battery Output Current")
+    .setOption("hAxis", {title: "Time"})
+    .setOption("vAxes", {0: {title: "Output Current (A)"}})
+    .build();
+
+     sheet.insertChart(Ioutchart);
+}
+
+function newPoutChart()
+{
+    var sheet_id = '1SCO1O9fMxWu7AC_HnG8A52A0Kz4f5mPd_om0JT2VKTw'; 		// Spreadsheet ID
+    var sheet = SpreadsheetApp.openById(sheet_id).getActiveSheet();		// get Active sheet
+    var newRow = sheet.getLastRow() + 1;			
+
+    Poutchart = sheet.newChart()
+    .asLineChart()
+    .setOption("useFirstColumnAsDomain", true)
+    .addRange(sheet.getRange(3,2,newRow,1))
+    .addRange(sheet.getRange(3,7,newRow,1))
+    .setNumHeaders(1)
+    .setPosition(5, 5, 0, 0)
+    .setOption("title", "Battery Output Power")
+    .setOption("hAxis", {title: "Time"})
+    .setOption("vAxes", {0: {title: "Output Power (W)"}})
+    .build();
+
+     sheet.insertChart(Poutchart);
+}
+
