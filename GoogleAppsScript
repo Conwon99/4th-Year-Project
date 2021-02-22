@@ -144,8 +144,8 @@ function doGet(e)
          var date = Utilities.formatDate(startDateCellval, "GMT", "dd/MM/yyyy");  
           
           
-          //var MS_in_1_min = 60000;
-         // var time_diff = (Math.abs(endDateCellval - startDateCellval))/60000;
+          var MS_in_1_min = 60000;
+          var time_diff = (Math.abs(endDateCellval - startDateCellval))/MS_in_1_min;
 
           // Set Heating Event Values
           //sheet.getRange(3,9).setValue(startRow); 
@@ -158,7 +158,7 @@ function doGet(e)
           sheet.getRange(CurrentHeatingEvent+2,12).setValue(date);
           sheet.getRange(CurrentHeatingEvent+2,13).setValue(startTime);
           sheet.getRange(CurrentHeatingEvent+2,14).setValue(endTime);
-          //sheet.getRange(CurrentHeatingEvent+2,14).setValue(time_diff);
+          sheet.getRange(CurrentHeatingEvent+2,15).setValue(time_diff);
           
           sheet.getRange(3,10).setValue("Test");
           Output_Energy = 0; // Set back to 0 for next heating event
