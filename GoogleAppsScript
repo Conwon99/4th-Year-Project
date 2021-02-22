@@ -1,10 +1,4 @@
 
-function getSpreadsheetData()
-{
-
-}
-
-
 function doGet(e) 
 { 
 
@@ -85,60 +79,8 @@ function doGet(e)
     newRange.setValues([rowData]);
 
 
-/*
-    var chart = sheet.newChart()
-     .setChartType(Charts.ChartType.LINE)
-     .addRange(sheet.getRange(3,2,newRow,1)) // (Row, Column, NumRow,NumColumns)
-     .setTitle('Battery Voltage')
-     .setXAxisTitle('Time')
-     .setYAxisTitle('Voltage (V)')
-     .setPosition(5, 5, 0, 0)
-     .build();
-*/
 
-/*()
-  var chartDataRange = sheet.getRange(3,1,newRow,2);
-
-  var hAxisOptions = 
-  {
-    slantedText: true,
-    slantedTextAngle: 60,
-    gridlines: {
-      count: 12
-    }
-  }
-
-  var lineChartBuilder = sheet.newChart().asLineChart();
-  var chart = lineChartBuilder
-    .addRange(sheet.getRange(3,1,newRow,2))
-    .setPosition(5, 8, 0, 0)
-    .setTitle('Battery Voltage')
-    .setNumHeaders(1)
-    .setOption('hAxis', hAxisOptions)
-    .setOption("useFirstColumnAsDomain", true)
-    .build();
-
-*/
-/*
-  var lineChartBuilder = sheet.newChart().asLineChart();
-  var chart = lineChartBuilder
-    .addRange(sheet.getRange(3,2,newRow,1))
-    .setPosition(5, 8, 0, 0)
-    .setTitle('Battery Voltage')
-    .build();
-*/
-
-
-/*
-var chart1 = sheet.getCharts()[0];
-chart1 = chart.modify()
-    .addRange(sheet.getRange(3,1,newRow,2))
-    .setOption('title', 'Battery Voltage')
-    .setPosition(2,2,0,0)
-    .build();
-sheet.updateChart(chart1);
-
-*/
+// UPDATE CHART//////////////////////////////
 
 var charts = sheet.getCharts();
 for (var i in charts) {
@@ -150,6 +92,21 @@ for (var i in charts) {
       .build();
   sheet.updateChart(newChart);
 }
+
+
+
+/*                                            // TRIED THIS TO UPDATE CHART AS WELL
+var chart = sheet.getCharts()[0];
+chart = chart.modify()
+    .addRange(sheet.getRange(3,1,newRow,2))
+    .setOption('title', 'Battery Voltage')
+    .setPosition(2,2,0,0)
+    .build();
+sheet.updateChart(chart);
+
+*/
+
+
 
   }
   // Return result of operation
@@ -171,20 +128,7 @@ function onOpen(e) {
       .addItem('Battery Voltage', 'newChart')
       .addToUi();
 
-/*
-var chart = sheet.newChart()
-    .asLineChart()
-    .setOption("useFirstColumnAsDomain", true)
-    .addRange(sheet.getRange(3,2,newRow,1))
-    .setNumHeaders(1)
-    .setPosition(5, 5, 0, 0)
-    .setOption("title", "Sample chart 1")
-    .setOption("hAxis", {title: "x axis"})
-    .setOption("vAxis", {title: "y axis"})
-    .build();
 
-     sheet.insertChart(chart);
-*/
 
 }
 
