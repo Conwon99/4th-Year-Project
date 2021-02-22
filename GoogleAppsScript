@@ -1,3 +1,6 @@
+    var CookCompleteCount = 0;
+    var CurrentHeatingEvent = 1;
+    var Output_Energy = 0;
 
 function getSpreadsheetData()
 {
@@ -31,8 +34,11 @@ function doGet(e)
 
     var rowData = [];
     
-    rowData[0] = date; 											// Timestamp in column A
-    rowData[1] = time;
+    rowData[1] = date; 											// Timestamp in column A
+    rowData[2] = time;
+
+
+
 
     for (var param in e.parameter) 
     {
@@ -41,44 +47,132 @@ function doGet(e)
       Logger.log(param + ':' + e.parameter[param]);
       switch (param) {
         case 'Vbat': //Parameter
-          rowData[2] = value; //Value in column B
+          rowData[3] = value; //Value in column B
 
           var Vbat = value;
           result = 'Written on column B';
           break;
 
         case 'Iout': //Parameter
-          rowData[3] = value; //Value in column C
+          rowData[4] = value; //Value in column C
 
           var Iout = value;
           result += ' ,Written on column D';
           break;  
 
         case 'Iin': //Parameter
-          rowData[4] = value; //Value in column C
+          rowData[5] = value; //Value in column C
           result += ' ,Written on column C';
           break;  
 
 
         case 'Cooker': //Parameter
-          rowData[15] = value; //Value in column C
+          rowData[18] = value; //Value in column C
           result += ' ,Written on column D';
           break;
 
         case 'Meal': //Parameter
-          rowData[16] = value; //Value in column C
+          rowData[19] = value; //Value in column C
           result += ' ,Written on column D';
           break;
 
         case 'Portion': //Parameter
-          rowData[17] = value; //Value in column C
+          rowData[20] = value; //Value in column C
           result += ' ,Written on column D';
           break;
 
         case 'Method': //Parameter
-          rowData[18] = value; //Value in column C
+          rowData[21] = value; //Value in column C
           result += ' ,Written on column D';
           break;
+
+
+        case 'CookComplete':
+
+          var HeatingEventValueIndex = 0;
+
+          if(value =="Yes")   // If cook completed
+          {
+            Output_Energy = 0;
+            var startTime;
+            var startRow;
+            // Increment through Heating Event
+
+                for (i = 1;i <newRow;i++)    // iterate through HeatingEventValues
+                { 
+                  var HeatingEventValue =  sheet.getRange(i+2,1).getValue(); // get cell value
+
+
+                    if(HeatingEventValue == CurrentHeatingEvent)    //
+                    {  // if on the same heating event
+
+                      HeatingEventValueIndex++;
+
+                      if (HeatingEventValueIndex ==1)     // If at start of range, get first value
+                      {
+                        
+                       startRow = i+2;
+
+                      }
+
+                      var Pout_cellValue = sheet.getRange(i+2,8).getValue(); // gets value in watts
+
+                      var Output_Energy = Output_Energy + Pout_cellValue;     //accumulate the watts to obtain Wh val
+
+                    }
+                      
+                      
+
+              
+                }
+
+           
+          //Pout_cellValue = sheet.getRange(3,8).getValue();
+          //var Output_Energy = Output_Energy + Pout_cellValue; 
+          
+
+          var dateCellval = sheet.getRange(startRow,2).getValue();
+
+          var endTimeRowval = startRow + HeatingEventValueIndex -1; // use time before as timestamp hasnt been made
+          var startDateCellval = sheet.getRange(startRow,2).getValue();
+          var endDateCellval = sheet.getRange(endTimeRowval,2).getValue(); 
+
+           // var endTimeCellval = sheet.getRange(17,2).getValue();
+
+         var startTime = Utilities.formatDate(startDateCellval, "GMT", "HH:mm:ss");
+         var endTime = Utilities.formatDate(endDateCellval, "GMT", "HH:mm:ss");  
+         var date = Utilities.formatDate(startDateCellval, "GMT", "dd/MM/yyyy");  
+          
+          
+          //var MS_in_1_min = 60000;
+         // var time_diff = (Math.abs(endDateCellval - startDateCellval))/60000;
+
+          // Set Heating Event Values
+          //sheet.getRange(3,9).setValue(startRow); 
+          //sheet.getRange(4,9).setValue(HeatingEventValueIndex); 
+          //sheet.getRange(4,10).setValue(diff); 
+
+          sheet.getRange(CurrentHeatingEvent+2,11).setValue(CurrentHeatingEvent); 
+          sheet.getRange(CurrentHeatingEvent+2,17).setValue(Output_Energy/1000);
+
+          sheet.getRange(CurrentHeatingEvent+2,12).setValue(date);
+          sheet.getRange(CurrentHeatingEvent+2,13).setValue(startTime);
+          sheet.getRange(CurrentHeatingEvent+2,14).setValue(endTime);
+          //sheet.getRange(CurrentHeatingEvent+2,14).setValue(time_diff);
+          
+          sheet.getRange(3,10).setValue("Test");
+          Output_Energy = 0; // Set back to 0 for next heating event
+          
+          }  
+
+          break;
+
+         case 'NewHeatingEvent':
+
+          if (value == 'Yes') 
+          {
+            CurrentHeatingEvent++; 
+          }
 
         default:
           result = "unsupported parameter";
@@ -86,8 +180,15 @@ function doGet(e)
       }
     }
 
+
+    
+   // sheet.getRange(3,7).setValue(startTime); 
+    
+
+    rowData[0] = CurrentHeatingEvent;
+
     var P_out = Vbat*Iout;
-    rowData[6] = P_out;
+    rowData[7] = P_out;
 
 
     Logger.log(JSON.stringify(rowData));
@@ -96,82 +197,10 @@ function doGet(e)
     newRange.setValues([rowData]);
 
 
-/*
-    var chart = sheet.newChart()
-     .setChartType(Charts.ChartType.LINE)
-     .addRange(sheet.getRange(3,2,newRow,1)) // (Row, Column, NumRow,NumColumns)
-     .setTitle('Battery Voltage')
-     .setXAxisTitle('Time')
-     .setYAxisTitle('Voltage (V)')
-     .setPosition(5, 5, 0, 0)
-     .build();
-*/
-
-/*()
-  var chartDataRange = sheet.getRange(3,1,newRow,2);
-
-  var hAxisOptions = 
-  {
-    slantedText: true,
-    slantedTextAngle: 60,
-    gridlines: {
-      count: 12
-    }
-  }
-
-  var lineChartBuilder = sheet.newChart().asLineChart();
-  var chart = lineChartBuilder
-    .addRange(sheet.getRange(3,1,newRow,2))
-    .setPosition(5, 8, 0, 0)
-    .setTitle('Battery Voltage')
-    .setNumHeaders(1)
-    .setOption('hAxis', hAxisOptions)
-    .setOption("useFirstColumnAsDomain", true)
-    .build();
-
-*/
-/*
-  var lineChartBuilder = sheet.newChart().asLineChart();
-  var chart = lineChartBuilder
-    .addRange(sheet.getRange(3,2,newRow,1))
-    .setPosition(5, 8, 0, 0)
-    .setTitle('Battery Voltage')
-    .build();
-*/
-
-
-/*
-var chart1 = sheet.getCharts()[0];
-chart1 = chart.modify()
-    .addRange(sheet.getRange(3,1,newRow,2))
-    .setOption('title', 'Battery Voltage')
-    .setPosition(2,2,0,0)
-    .build();
-sheet.updateChart(chart1);
-
-*/
-/*
-var Voltagechart = sheet.getCharts()[0];
-
-  //var chart = charts[0];
-  var newChart = Voltagechart
-      .modify()
-
-      .addRange(sheet.getRange(3,2,newRow,1))
-      .addRange(sheet.getRange(3,3,newRow,1))
-      .build();
-  sheet.updateChart(newChart);
-
-*/
-
-//Update Voltage
-
-//var Voltagechart_range = sheet.getRange(3,2,newRow,2);
-
-var time_range = sheet.getRange(3,2,newRow,1);
+var time_range = sheet.getRange(3,3,newRow,1);
 
 var Voltagechart = sheet.getCharts()[0];
-var Voltagechart_range = sheet.getRange(3,2,newRow,2);
+var Voltagechart_range = sheet.getRange(3,3,newRow,2);
 var ranges = Voltagechart.getRanges();
 Voltagechart = Voltagechart.modify();
 ranges.forEach(function(Voltagechart_range) {Voltagechart.removeRange(Voltagechart_range)});
@@ -232,7 +261,10 @@ function onOpen(e) {
       .addItem('Battery Output Power', 'newPoutChart')
       .addToUi();
 
+
 }
+
+
 
 
 function newVoltageChart()
@@ -241,16 +273,27 @@ function newVoltageChart()
     var sheet = SpreadsheetApp.openById(sheet_id).getActiveSheet();		// get Active sheet
     var newRow = sheet.getLastRow() + 1;			
 
+     var hAxisOptions = 
+  {
+    slantedText: true,
+    slantedTextAngle: 60,
+    gridlines: {
+      count: 12
+    }
+  }
+
+
     chart = sheet.newChart()
     .asLineChart()
     .setOption("useFirstColumnAsDomain", true)
-    .addRange(sheet.getRange(3,2,newRow,1))
     .addRange(sheet.getRange(3,3,newRow,1))
+    .addRange(sheet.getRange(3,4,newRow,1))
     .setNumHeaders(1)
     .setPosition(5, 5, 0, 0)
     .setOption("title", "Battery Voltage")
     .setOption("hAxis", {title: "Time"})
     .setOption("vAxes", {0: {title: "Battery Voltage (V)"}})
+    .setOption('hAxis', hAxisOptions)
     .build();
 
      sheet.insertChart(chart);
@@ -266,8 +309,8 @@ function newIoutChart()
     Ioutchart = sheet.newChart()
     .asLineChart()
     .setOption("useFirstColumnAsDomain", true)
-    .addRange(sheet.getRange(3,2,newRow,1))
-    .addRange(sheet.getRange(3,4,newRow,1))
+    .addRange(sheet.getRange(3,3,newRow,1))
+    .addRange(sheet.getRange(3,5,newRow,1))
     .setNumHeaders(1)
     .setPosition(5, 5, 0, 0)
     .setOption("title", "Battery Output Current")
@@ -287,8 +330,8 @@ function newPoutChart()
     Poutchart = sheet.newChart()
     .asLineChart()
     .setOption("useFirstColumnAsDomain", true)
-    .addRange(sheet.getRange(3,2,newRow,1))
-    .addRange(sheet.getRange(3,7,newRow,1))
+    .addRange(sheet.getRange(3,3,newRow,1))    //time
+    .addRange(sheet.getRange(3,7,newRow,1))     // Pout
     .setNumHeaders(1)
     .setPosition(5, 5, 0, 0)
     .setOption("title", "Battery Output Power")
