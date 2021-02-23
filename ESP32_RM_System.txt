@@ -3,24 +3,9 @@
 // Board : ESP32 Wrover Module
 // Function : 
 
-
-// To do... 
-//          printing variables out to screen / Reduce update time
-//          Using 1s timer
-//          Not displaying in interrupt displaying changing variable
-
-
-
-//          Google Sheets manipulation
-//          Writing the voltage divider and current sensor code
-//          look into protecting against removal of components
-// 
-
 //Library Declerations............................
 
-
 #include <ArduinoHttpClient.h> // For HTTP Communication
-
 
 #include "FS.h"     // SD Card
 #include "SD.h"
@@ -36,10 +21,6 @@
 #endif
 
 BluetoothSerial SerialBT;
-
-
-
-
 
 // Pin Defenitions................................
 
@@ -59,9 +40,7 @@ SPIClass sdSPI(HSPI);
 #define SD_MISO 12
 #define SD_MOSI 13
 
-//Battery Monitoring
-
-
+//OLED DISPLAY
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
@@ -73,24 +52,44 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // SCL = 22
 // SDA = 21
 
+// POWER MONITORING
 
-int gettingRequest = 0;
+// Reading Variables
+int NumberofReadings = 0;
+bool AverageTaken = false;
+
+
+// ACS712 Current Sensor variables
+const int Iout_pin = 36;
+float offsetVoltage = 2.46;
+double Iout = 0;
+float sensitivity = 0.1;  //int sensitivity = 0.1; //100mV/A
+float Inverteroffset = 0.81;
+volatile double Iout_voltage;
+volatile double sum_Iout_voltage=0;
+double avg_Iout_voltage;
+
+
+// Voltage Divider variables
+const int Vdiv_pin= 34;
+double R1 = 99600.0;
+double R2=  5060;
+double Resistor_ratio;
+double Vbat = 0;
+volatile double Vdiv_voltage;
+volatile double sum_Vdiv_voltage=0;
+double avg_Vdiv_voltage;
+
+double power;
 
 
 //Cooking Diary Data - Bluetooth 
-
 int QualDataCollected = 0;
 char QualArray[4][30] = {"","","",""};     // [Qparam][charnum]
+int Qparam=0;
+int charnum = 0;
+String dataMessage;
 
-
-
-
-
-volatile int Vdiv_ADCval = 0;
-const int Vdiv_GPIO = 34;
-volatile float Vbat = 1;
-char CharVbat[] = "";
-int count = 0;
 
 // Your GPRS credentials (leave empty, if not needed)
 const char apn[]      = "orangeinternet"; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
@@ -100,50 +99,34 @@ const char gprsPass[] = ""; // GPRS Password
 // SIM card PIN (leave empty, if not defined)
 const char simPIN[]   = ""; 
 
-//script.google.com/macros/s/AKfycbwCJdRt1LMQF5Tyi44yIrYQanjym0QVlX9DZ-6tR7_3IGr7ZoTL/exec
-
-
-
-
-
-
 // Server details
-// The server variable can be just a domain name or it can have a subdomain. It depends on the service you are using
-
 const char server[] = "script.google.com"; // domain name: example.com, maker.ifttt.com, etc
-
-//https://script.google.com/macros/s/AKfycbyWENvzetnFOmKif5DgAwIJa9krn5GiPoGCI-BHPkFrq9qG4ZuvIG_ZeA/exec?Vbat=2&Iin=3&Iout=5&Cooker=RC&Meal=Rice&Portion=5&Method=Boil
-
 const char orig_resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?";
 char resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?"; //must be pre-defined buffer
 char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Vbat=1.00&Iin=2&Iout=5&Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil";
 //const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
 const int  port = 443;                             // server port number
 
-char VbatQuery[15] = "Vbat=";
+char CharVbat[] = "";
+//char VbatQuery[15] = "Vbat=";
+//char IinQuery[15] = "&Iin=2";
+//char IoutQuery[15] = "&Iout=5";
+//char CookerQuery[20] = "&Cooker=";
+//char MealQuery[15] = "&Meal=";
+//char PortionQuery[15] = "&Portion=";
+//char MethodQuery[15] = "&Method=";
+
+//For Testing
+char VbatQuery[15] = "Vbat=1";
 char IinQuery[15] = "&Iin=2";
 char IoutQuery[15] = "&Iout=5";
-char CookerQuery[20] = "&Cooker=";
-char MealQuery[15] = "&Meal=";
-char PortionQuery[15] = "&Portion=";
-char MethodQuery[15] = "&Method=";
+char CookerQuery[20] = "&Cooker=C";
+char MealQuery[15] = "&Meal=M";
+char PortionQuery[15] = "&Portion=1";
+char MethodQuery[15] = "&Method=B";
 
-
-int Qparam=0;
-int charnum = 0;
-
-
-// Issue was changing server name in code resulted in guru meditation error
-
-//https://script.google.com/macros/s/AKfycbyHpIqYivf-mdTOU6eKUuo_7NH3H5Yb1pgin-NKQoxXbNvCTrYrgvY2ew/exec
-
-
-// new https://script.google.com/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec
-
-// https://docs.google.com/spreadsheets/d/e/2PACX-1vQTjkAdLMsl3c8cxudlLkrqzYlQLHTijn-rBqChgvIq11svMPeC-4Ce9O7H5PG1oz0St9bYeCb1p4I8/pubhtml
-String dataMessage;
 float Iin = 2.0;
-float Iout = 5.0;
+
 
 
 // SIM800L defenitions.........................................................
@@ -190,6 +173,32 @@ HttpClient          http(client, server, port);
 
 #define IP5306_ADDR          0x75
 #define IP5306_REG_SYS_CTL0  0x00
+
+
+// Functions
+
+//SIM800L
+bool setPowerBoostKeepOn(int);
+void setupSIM800L(void);
+
+//Bluetooth
+void CollectQualitativeData(void);
+
+//SD Card
+void setupSD(void);
+void writeFile(fs::FS &fs, const char,const char);
+void appendFile(fs::FS &fs, const char , const char);
+void logSDCard(void);
+
+//Display
+void displayVbat(void);
+
+// URL
+void AppendQueryParameters(void);
+
+//Timer
+void setupTimer(void);
+
 
 bool setPowerBoostKeepOn(int en){
   I2CPower.beginTransmission(IP5306_ADDR);
@@ -458,34 +467,13 @@ strcat(resource,QualArray[3]);
 hw_timer_t * timer = NULL;
 
 // Dont include anything float related
-volatile int timer_count = 0;
-volatile int accumulatedVdiv_ADCval=0;
-volatile int Reset_Count = 0;
+
 
 void IRAM_ATTR onTimer()
 {
 
 
 
-
-    if (Reset_Count == 1)    // In loop, 
-
-    { 
-     timer_count=0;
-     Reset_Count=0;
-     accumulatedVdiv_ADCval = 0;
-   }
-
-  
-   timer_count++;
-
-   Vdiv_ADCval = analogRead(Vdiv_GPIO);  // Take ADC reading every second
-
-   accumulatedVdiv_ADCval = accumulatedVdiv_ADCval + Vdiv_ADCval;
-  
-   Serial.println(Vdiv_ADCval);
-
-  
   
 }
 
@@ -514,18 +502,7 @@ volatile float Avg_ADC=1;
 
 void setVbat() {
 
- if (accumulatedVdiv_ADCval==0 || timer_count==0) {
 
-        Avg_ADC = 0;
-        
-      }
-      else
-      {
-        Avg_ADC = (accumulatedVdiv_ADCval/timer_count); // Accumulated ADC readings over number of readings
-        
-      }
-
-      Vbat= Avg_ADC*(3.3/4095);                       // Average ADC value to Voltage
 
 }
 
@@ -534,18 +511,18 @@ void setVbat() {
 void setup() {
   
   SerialMon.begin(115200);
-  setupDisplay();
-  displayVbat();
+  //setupDisplay();
+  //displayVbat();
 
 
-  SerialBT.begin("ESP32test"); //Bluetooth device name
-  CollectQualitativeData();
+ // SerialBT.begin("ESP32test"); //Bluetooth device name
+  //CollectQualitativeData();
  // SerialBT.end(); //Bluetooth device name
 
   
   setupTimer();
   setupSIM800L();
-  setupSD();
+  //setupSD();
   // Configure the wake up source as timer wake up  
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); // POSSIBLE TIMER DISRUPTION??
 }
@@ -572,8 +549,8 @@ c++;
     setupSD();
   }
   
-  setVbat();
-  displayVbat();
+  //setVbat();
+  //displayVbat();
 
 
  // AppendQueryParameters();      //    IF ERROR REPLACE HERE
@@ -611,7 +588,7 @@ c++;
 
       http.connectionKeepAlive();  // Currently, this is needed for HTTPS
 
-      setVbat();
+      //setVbat();
       AppendQueryParameters();
       logSDCard();
       
@@ -619,8 +596,7 @@ c++;
       Serial.println(Vbat);
 
 
-      Reset_Count=1;
-
+      
       
       // Disable timer here??
 
