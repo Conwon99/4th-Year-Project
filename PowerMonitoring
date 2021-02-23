@@ -114,7 +114,7 @@ void loop(void)
 
 //int16_t current_adc1 = ads.readADC_SingleEnded(1); // ADC Reading for Current
 
-if (NumberofReadings >= 5 && AverageTaken == false)
+if (NumberofReadings >= 10 && AverageTaken == false)
 { 
   AverageTaken =true;
   
