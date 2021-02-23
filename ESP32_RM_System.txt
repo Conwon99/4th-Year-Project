@@ -540,7 +540,7 @@ void setup() {
 
   SerialBT.begin("ESP32test"); //Bluetooth device name
   CollectQualitativeData();
-  SerialBT.end(); //Bluetooth device name
+ // SerialBT.end(); //Bluetooth device name
 
   
   setupTimer();
@@ -580,24 +580,34 @@ c++;
 
 
   SerialMon.print("Connecting to APN: ");
+   SerialBT.print("Connecting to APN: ");
+  
   SerialMon.print(apn);
   if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
     SerialMon.println(" fail");
+    SerialBT.println(" fail");
   }
   else 
   {
     SerialMon.println(" OK");
+    SerialBT.println(" OK");
     
     SerialMon.print("Connecting to ");
+    SerialBT.print("Connecting to ");
+    
     SerialMon.print(server);
+    SerialBT.print(server);
     if (!client.connect(server, port)) {
       SerialMon.println(" fail");
+      SerialBT.println(" fail");
+
     }
     else 
     {                          // CONNECTION TO SERVER SUCCESFUL
       SerialMon.println(" OK");
-    
+      SerialBT.println(" OK");
       SerialMon.print(F("Performing HTTP GET request... "));
+      SerialBT.print("Performing HTTP GET request... ");
 
       http.connectionKeepAlive();  // Currently, this is needed for HTTPS
 
@@ -620,6 +630,8 @@ c++;
       if (err != 0) 
       {
        SerialMon.println(F("failed to connect")); /// occurring
+       SerialBT.println("failed to connect"); 
+       
        delay(10000);
        return;
       }
@@ -627,6 +639,8 @@ c++;
       int status = http.responseStatusCode();
       SerialMon.print(F("Response status code: "));
       SerialMon.println(status);
+      SerialBT.println(status);
+      
       if (!status) 
       {
         delay(10000);
@@ -635,6 +649,7 @@ c++;
 
       http.stop();
       SerialMon.println(F("Server disconnected"));
+      SerialBT.println("Server disconnected");
       SerialMon.println();
 
       // Put ESP32 into deep sleep mode (with timer wake up)
