@@ -1,0 +1,85 @@
+#include <Wire.h>
+#include <Adafruit_ADS1015.h>
+
+//P=IV
+
+// No load + Power Meter = 0.73A
+//Cooker : 0.81A difference => Inverter+Power Meter takes 0.81A
+
+
+// Inverter consumes 0.44A
+// Power meter idle consumes  0.83-0.44 = 
+// Cooker Power meter 0.75+0.39A = 1.14A greater than calculated
+// 
+
+// Laptop Charger : 32W , 11.58V I = P/V = 32/11.58 = 2.76A  Fluctuations between 30W-35W
+// Measured = 3.2A
+// Difference = 0.44
+
+
+
+
+//int sensitivity = 0.1; //100mV/A
+float Vadc_Iout= 0;
+float Vadc_Vout =0;
+float offsetVoltage = 2.484;
+double currentValue = 0;
+float sensitivity = 0.1;
+double Vbat = 0;
+
+double R1 = 99600.0;
+double R2=  5080;
+double  Res_ratio;
+Adafruit_ADS1115 ads(0x48);
+float Voltage = 0.0;
+
+void setup(void) 
+{
+Serial.begin(9600); 
+ads.begin();
+
+Res_ratio = R2/(R2+R1);
+}
+
+void loop(void) 
+{
+int16_t adc0;
+int16_t adc1;
+
+adc0 = ads.readADC_SingleEnded(0);
+Vadc_Iout = ((adc0 * 0.1875)/1000) -offsetVoltage;
+
+adc1 = ads.readADC_SingleEnded(1);
+Vadc_Vout = ((adc1 * 0.1875)/1000);
+
+Res_ratio = R2/(R2+R1);
+
+Vbat = Vadc_Vout/Res_ratio;
+
+currentValue = Vadc_Iout/sensitivity;
+double currentAdjusted = currentValue -0.81;
+
+double power = currentAdjusted*Vbat;
+
+//Serial.print("AIN0: "); 
+//Serial.println(adc0);
+//Serial.print("\tVoltage: ");
+//Serial.println(Vadc_Iout, 7); 
+Serial.print("\tCurrent: ");
+Serial.println(currentValue, 7); 
+Serial.print("\tCurrent Adjusted: ");
+Serial.println(currentAdjusted, 7); 
+
+
+//Serial.print("AIN1: "); 
+//Serial.println(adc1);
+//Serial.print("\tVadc_Vout: ");
+//Serial.println(Vadc_Vout, 7); 
+Serial.print("\tVbat: ");
+Serial.println(Vbat, 7); 
+Serial.print("\tPower: ");
+Serial.println(power, 7); 
+Serial.println();
+Serial.println();
+delay(1000);
+}
