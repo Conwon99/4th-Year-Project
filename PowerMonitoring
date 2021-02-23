@@ -1,5 +1,3 @@
-#include <Wire.h>
-#include <Adafruit_ADS1015.h>
 
 //P=IV
 
@@ -16,70 +14,152 @@
 // Measured = 3.2A
 // Difference = 0.44
 
+// Reading Variables
+int NumberofReadings = 0;
+bool AverageTaken = false;
 
 
+// ACS712 Current Sensor variables
+const int Iout_pin = 36;
+float offsetVoltage = 2.46;
+double Iout = 0;
+float sensitivity = 0.1;  //int sensitivity = 0.1; //100mV/A
+float Inverteroffset = 0.81;
+volatile double Iout_voltage;
+volatile double sum_Iout_voltage=0;
+double avg_Iout_voltage;
 
-//int sensitivity = 0.1; //100mV/A
-float Vadc_Iout= 0;
-float Vadc_Vout =0;
-float offsetVoltage = 2.484;
-double currentValue = 0;
-float sensitivity = 0.1;
-double Vbat = 0;
 
+// Voltage Divider variables
+const int Vdiv_pin= 34;
 double R1 = 99600.0;
-double R2=  5080;
-double  Res_ratio;
-Adafruit_ADS1115 ads(0x48);
-float Voltage = 0.0;
+double R2=  5060;
+double Resistor_ratio;
+double Vbat = 0;
+volatile double Vdiv_voltage;
+volatile double sum_Vdiv_voltage=0;
+double avg_Vdiv_voltage;
+
+double power;
+
+
+
+double ReadVoltage(byte pin){
+  double reading = analogRead(pin); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
+  if(reading < 1 || reading > 4095) return 0;
+   //return -0.000000000009824 * pow(reading,3) + 0.000000016557283 * pow(reading,2) + 0.000854596860691 * reading + 0.065440348345433;
+  return (-0.000000000000016 * pow(reading,4) + 0.000000000118171 * pow(reading,3)- 0.000000301211691 * pow(reading,2)+ 0.001109019271794 * reading + 0.034143524634089)+0.005;
+} 
+
+
+
+
+hw_timer_t * timer = NULL;
+
+void IRAM_ATTR onTimer(){
+
+
+ if (AverageTaken == true)
+    {
+      //NumberofReadings = 0;
+      sum_Iout_voltage =0;
+      sum_Vdiv_voltage =0;
+      AverageTaken = false;
+      
+    }
+
+
+
+    Vdiv_voltage = ReadVoltage(Vdiv_pin);
+    sum_Vdiv_voltage += Vdiv_voltage;
+
+    Iout_voltage = ReadVoltage(Iout_pin) -offsetVoltage;
+    sum_Iout_voltage += Iout_voltage;
+
+   //Serial.print("Iout_voltage = ");
+   // Serial.println(Iout_voltage);
+//
+//    Serial.print("Vdiv_ADC = ");
+//    Serial.println(Vdiv_ADC);
+
+    NumberofReadings++;
+}
+
 
 void setup(void) 
 {
-Serial.begin(9600); 
-ads.begin();
+  Serial.begin(9600); 
 
-Res_ratio = R2/(R2+R1);
+
+  Resistor_ratio = R2/(R2+R1);
+
+  timer = timerBegin(0, 80, true);
+
+  /* Attach onTimer function to our timer */
+  timerAttachInterrupt(timer, &onTimer, true);
+
+  /* Set alarm to call onTimer function every second 1 tick is 1us
+  => 1 second is 1000000us */
+  /* Repeat the alarm (third parameter) */
+  timerAlarmWrite(timer, 200000, true);    // every 0.2s
+
+  /* Start an alarm */
+  timerAlarmEnable(timer);
+
+
 }
 
 void loop(void) 
 {
-int16_t adc0;
-int16_t adc1;
 
-adc0 = ads.readADC_SingleEnded(0);
-Vadc_Iout = ((adc0 * 0.1875)/1000) -offsetVoltage;
+//int16_t current_adc1 = ads.readADC_SingleEnded(1); // ADC Reading for Current
 
-adc1 = ads.readADC_SingleEnded(1);
-Vadc_Vout = ((adc1 * 0.1875)/1000);
+if (NumberofReadings >= 5 && AverageTaken == false)
+{ 
+  AverageTaken =true;
+  
+   // get average adc voltage values 
+   avg_Vdiv_voltage = sum_Vdiv_voltage/NumberofReadings;
+   Vbat = avg_Vdiv_voltage/Resistor_ratio;
 
-Res_ratio = R2/(R2+R1);
+   avg_Iout_voltage = sum_Iout_voltage/NumberofReadings;
+   Iout = (Iout_voltage/sensitivity);// - Inverteroffset;
 
-Vbat = Vadc_Vout/Res_ratio;
+   if (Iout >0.3)
+   {
+    Iout = Iout - Inverteroffset;
+    
+   }
+   else if (Iout <0.3)
+   {
+    Iout= 0.0;
+    
+   }
+   
+   power = Iout*Vbat;
 
-currentValue = Vadc_Iout/sensitivity;
-double currentAdjusted = currentValue -0.81;
+Serial.print("avg_Vdiv_voltage = ");
+Serial.println(avg_Vdiv_voltage,7);
 
-double power = currentAdjusted*Vbat;
+Serial.print("Vbat = ");
+Serial.println(Vbat);
 
-//Serial.print("AIN0: "); 
-//Serial.println(adc0);
-//Serial.print("\tVoltage: ");
-//Serial.println(Vadc_Iout, 7); 
-Serial.print("\tCurrent: ");
-Serial.println(currentValue, 7); 
-Serial.print("\tCurrent Adjusted: ");
-Serial.println(currentAdjusted, 7); 
+Serial.print("avg_Iout_voltage = ");
+Serial.println(avg_Iout_voltage,7);
 
+Serial.print("Iout = ");
+Serial.println(Iout);
 
-//Serial.print("AIN1: "); 
-//Serial.println(adc1);
-//Serial.print("\tVadc_Vout: ");
-//Serial.println(Vadc_Vout, 7); 
-Serial.print("\tVbat: ");
-Serial.println(Vbat, 7); 
-Serial.print("\tPower: ");
-Serial.println(power, 7); 
+Serial.print("Power = ");
+Serial.println(power);
+
+Serial.print("NumReadings = ");
+Serial.println(NumberofReadings);
+
 Serial.println();
 Serial.println();
-delay(1000);
+
+
+NumberofReadings = 0;
+}
 }
