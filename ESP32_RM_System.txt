@@ -4,6 +4,10 @@
 // Function : 
 
 //Library Declerations............................
+// Temperature changing Resistance???
+//Vout of divider increases as ADC connceted
+// Occured with pin 35, seems fine with 34
+
 
 #include <ArduinoHttpClient.h> // For HTTP Communication
 
@@ -55,14 +59,16 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // POWER MONITORING
 
 // Reading Variables
-int NumberofReadings = 0;
-bool AverageTaken = false;
+
+
+int NumReadings =0;
+bool ReadingsTaken = false;
 
 
 // ACS712 Current Sensor variables
-const int Iout_pin = 36;
+const int Iout_pin = 34;
 float offsetVoltage = 2.46;
-double Iout = 0;
+float Iout = 0.0;
 float sensitivity = 0.1;  //int sensitivity = 0.1; //100mV/A
 float Inverteroffset = 0.81;
 volatile double Iout_voltage;
@@ -71,11 +77,11 @@ double avg_Iout_voltage;
 
 
 // Voltage Divider variables
-const int Vdiv_pin= 34;
+const int Vdiv_pin= 39;
 double R1 = 99600.0;
-double R2=  5060;
+double R2=  5080;
 double Resistor_ratio;
-double Vbat = 0;
+float Vbat = 0.0;
 volatile double Vdiv_voltage;
 volatile double sum_Vdiv_voltage=0;
 double avg_Vdiv_voltage;
@@ -90,6 +96,10 @@ int Qparam=0;
 int charnum = 0;
 String dataMessage;
 
+//SD
+int SDfail=0;
+
+
 
 // Your GPRS credentials (leave empty, if not needed)
 const char apn[]      = "orangeinternet"; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
@@ -103,27 +113,28 @@ const char simPIN[]   = "";
 const char server[] = "script.google.com"; // domain name: example.com, maker.ifttt.com, etc
 const char orig_resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?";
 char resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?"; //must be pre-defined buffer
-char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Vbat=1.00&Iin=2&Iout=5&Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil";
+char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Vbat=1.00&Iin=2&Iout=5&Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil&ndplr=1";
 //const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
 const int  port = 443;                             // server port number
 
-char CharVbat[] = "";
-//char VbatQuery[15] = "Vbat=";
-//char IinQuery[15] = "&Iin=2";
-//char IoutQuery[15] = "&Iout=5";
-//char CookerQuery[20] = "&Cooker=";
-//char MealQuery[15] = "&Meal=";
-//char PortionQuery[15] = "&Portion=";
-//char MethodQuery[15] = "&Method=";
+char CharVbat[6] = "";
+char CharIout[6] = "";
+char VbatQuery[15] = "Vbat=";
+char IinQuery[15] = "&Iin=";
+char IoutQuery[15] = "&Iout=";
+char CookerQuery[20] = "&Cooker=";
+char MealQuery[15] = "&Meal=";
+char PortionQuery[15] = "&Portion=";
+char MethodQuery[15] = "&Method=";
 
 //For Testing
-char VbatQuery[15] = "Vbat=1";
-char IinQuery[15] = "&Iin=2";
-char IoutQuery[15] = "&Iout=5";
-char CookerQuery[20] = "&Cooker=C";
-char MealQuery[15] = "&Meal=M";
-char PortionQuery[15] = "&Portion=1";
-char MethodQuery[15] = "&Method=B";
+//char VbatQuery[15] = "Vbat=1";
+//char IinQuery[15] = "&Iin=2";
+//char IoutQuery[15] = "&Iout=5";
+//char CookerQuery[20] = "&Cooker=C";
+//char MealQuery[15] = "&Meal=M";
+//char PortionQuery[15] = "&Portion=1";
+//char MethodQuery[15] = "&Method=B";
 
 float Iin = 2.0;
 
@@ -199,6 +210,230 @@ void AppendQueryParameters(void);
 //Timer
 void setupTimer(void);
 
+//ADC
+double ReadVoltage(byte);
+void setBatteryParameters(void);
+
+void setup() {
+  
+  SerialMon.begin(115200);
+//  setupDisplay();
+//  displayVbat();
+
+  Resistor_ratio = R2/(R2+R1);
+
+ // SerialBT.begin("ESP32test"); //Bluetooth device name
+  //CollectQualitativeData();
+ // SerialBT.end(); //Bluetooth device name
+
+  
+  setupTimer();
+  setupSIM800L();
+  setupSD();
+  // Configure the wake up source as timer wake up  
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); // POSSIBLE TIMER DISRUPTION??
+}
+
+
+
+void loop() 
+
+{
+SerialMon.print("Mainloop Start");
+
+/*
+NumReadings=5;
+for (int i=1;i<=NumReadings;i++)
+{
+Serial.println(ReadVoltage(Vdiv_pin));
+
+    Vdiv_voltage = ReadVoltage(Vdiv_pin);
+    sum_Vdiv_voltage += Vdiv_voltage;
+
+    Iout_voltage = ReadVoltage(Iout_pin) -offsetVoltage;
+    sum_Iout_voltage += Iout_voltage;
+
+delay(200);
+}
+*/
+
+//setBatteryParameters();
+
+//sum_Iout_voltage =0;
+//sum_Vdiv_voltage =0;
+
+//AppendQueryParameters();
+    //  logSDCard();
+
+ //if (SDfail ==1) 
+//  {
+ //   setupSD();
+ // }
+  
+  //setVbat();
+  //displayVbat();
+
+
+ // AppendQueryParameters();      //    IF ERROR REPLACE HERE
+
+
+
+   SerialMon.print("Connecting to APN: ");
+   SerialBT.print("Connecting to APN: ");
+  
+  SerialMon.print(apn);
+  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
+    SerialMon.println(" fail");
+    SerialBT.println(" fail");
+  }
+  else 
+  {
+    SerialMon.println(" OK");
+    SerialBT.println(" OK");
+
+
+   // setBatteryParameters();
+    
+    SerialMon.print("Connecting to ");
+    SerialBT.print("Connecting to ");
+    
+    SerialMon.print(server);
+    SerialBT.print(server);
+    if (!client.connect(server, port)) {
+      SerialMon.println(" fail");
+      SerialBT.println(" fail");
+
+    }
+    else 
+    {                          // CONNECTION TO SERVER SUCCESFUL
+      SerialMon.println(" OK");
+      SerialBT.println(" OK");
+      SerialMon.print(F("Performing HTTP GET request... "));
+      SerialBT.print("Performing HTTP GET request... ");
+
+
+    
+      http.connectionKeepAlive();  // Currently, this is needed for HTTPS
+
+ //     setBatteryParameters();
+  //    AppendQueryParameters();
+      //displayVbat();
+ //     logSDCard();
+      
+      ReadingsTaken == true; // reset sum values
+      
+
+      // Disable timer here??
+
+     //int err = http.get(resource);
+       int err = http.get(staticresource);
+ 
+      if (err != 0) 
+      {
+       SerialMon.println(F("failed to connect")); /// occurring
+       SerialBT.println("failed to connect"); 
+       
+       delay(10000);
+       return;
+      }
+
+      int status = http.responseStatusCode();
+      SerialMon.print(F("Response status code: "));
+      SerialMon.println(status);
+      SerialBT.println(status);
+
+
+        SerialMon.println(F("Response Headers:"));
+    while (http.headerAvailable()) {
+    String headerName = http.readHeaderName();
+    String headerValue = http.readHeaderValue();
+
+
+    if (status ==302 && headerName == "Location")
+    {
+ 
+      Serial.println("Location Found");  
+      Serial.println();
+      Serial.println(headerValue);
+      Serial.println("Location Edit ");  
+
+      headerValue.remove(0,8);
+      Serial.println(headerValue);
+
+/*
+        int err = http.get(headerValue);
+ 
+      if (err != 0) 
+      {
+       SerialMon.println(F("failed to connect")); /// occurring
+       SerialBT.println("failed to connect"); 
+       
+       delay(10000);
+       return;
+      }
+
+    */
+
+    
+    //SerialMon.println("    " + headerName + " : " + headerValue);
+  }
+  }
+      String body = http.responseBody();
+      SerialMon.println(F("Response:"));
+      SerialMon.println(body);
+
+
+
+      
+      
+      if (!status) 
+      {
+        delay(10000);
+        return;
+      }
+
+      http.stop();
+      SerialMon.println(F("Server disconnected"));
+      SerialBT.println("Server disconnected");
+      SerialMon.println();
+
+      // Put ESP32 into deep sleep mode (with timer wake up)
+      //esp_deep_sleep_start();
+
+       delay(1000);
+
+      memset(resource, 0, sizeof resource);
+      strcpy(resource,orig_resource);
+
+      Serial.println();
+      Serial.println("New Reasource =");
+      Serial.println(resource);
+      Serial.println();
+
+      
+       
+    }
+  }
+
+
+
+//Serial.print("avg_Vdiv_voltage = ");
+//Serial.println(avg_Vdiv_voltage,7);
+//delay(10000);
+  
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 bool setPowerBoostKeepOn(int en){
   I2CPower.beginTransmission(IP5306_ADDR);
@@ -252,9 +487,11 @@ void setupSIM800L() {
 
 
 
-char incomingChar;
+
 
 void CollectQualitativeData() {
+
+char incomingChar;
 
 Qparam=0;
 charnum = 0;
@@ -311,7 +548,7 @@ delay(20);
 
 
 //................SD Card Functions......................................
-int SDfail=0;
+
 
 void setupSD() {
   
@@ -438,16 +675,24 @@ void AppendQueryParameters() {
 
 
 dtostrf(Vbat, 4, 2, CharVbat); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
+dtostrf(Iout, 4, 2, CharIout); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
 
+Serial.print("CharVbat =");
+Serial.println(CharVbat);
+
+Serial.print("CharIout =");
+Serial.println(CharIout);
 
 strcat(resource, VbatQuery); 
 strcat(resource, CharVbat);
 //Vbat++;
 
-strcat(resource, IinQuery); 
+//strcat(resource, IinQuery); 
 
 strcat(resource, IoutQuery); 
+strcat(resource, CharIout);
 
+/*
 strcat(resource,CookerQuery); // resource + Resource_variables
 strcat(resource,QualArray[0]); 
 
@@ -460,7 +705,8 @@ strcat(resource,QualArray[2]);
 strcat(resource,MethodQuery); // resource + Resource_variables
 strcat(resource,QualArray[3]); 
 
-//Serial.println(resource);
+*/
+Serial.println(resource);
 
 }
 
@@ -469,11 +715,63 @@ hw_timer_t * timer = NULL;
 // Dont include anything float related
 
 
-void IRAM_ATTR onTimer()
+void IRAM_ATTR onTimer() // Read values every 0.2s
+                         // If spike in current, set relay off
+                         // Want to get the start time of reading as 
+                         // large time difference between start of cook and transmission of values
+                         // two variables on server..reading made vs reading recieved
 {
 
+  
+
+ if (ReadingsTaken == true)
+    {
+      NumReadings = 0;
+      sum_Iout_voltage =0;
+      sum_Vdiv_voltage =0;
+      ReadingsTaken = false;
+     
+    }
 
 
+ 
+
+
+
+
+
+    Vdiv_voltage = ReadVoltage(Vdiv_pin);
+    sum_Vdiv_voltage += Vdiv_voltage;
+
+    Iout_voltage = ReadVoltage(Iout_pin) -offsetVoltage;
+    sum_Iout_voltage += Iout_voltage;
+    
+//Serial.println();
+//Serial.println(Vdiv_voltage,7);
+//Serial.println(Iout_voltage,7);
+//Serial.println();
+
+    if (Iout_voltage >0.3)     // Start Count
+    {
+    //  bool LoadActive =true;
+    //  int IoutOnCount++;
+      
+
+      
+    }
+
+   //Serial.print("Iout_voltage = ");
+   // Serial.println(Iout_voltage);
+//
+   // Serial.print("NumReadings = ");
+   // Serial.println(NumReadings);
+
+ //  Serial.print("ReadingsTaken = ");
+  //  Serial.println(ReadingsTaken);
+  //NumReadings++;
+
+    NumReadings++;
+   // Serial.print(NumReadings);
   
 }
 
@@ -491,152 +789,78 @@ void setupTimer() {
   // Set alarm to call onTimer function every second 1 tick is 1us
  // => 1 second is 1000000us 
   // Repeat the alarm (third parameter) 
-  timerAlarmWrite(timer, 1000000, true);
+  timerAlarmWrite(timer, 500000, true);
 
   //Start an alarm 
   timerAlarmEnable(timer);
 
 }
 
-volatile float Avg_ADC=1;
 
-void setVbat() {
+
+
+double ReadVoltage(byte pin){
+  double reading = analogRead(pin); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
+  if(reading < 1 || reading > 4095) return 0;
+   //return -0.000000000009824 * pow(reading,3) + 0.000000016557283 * pow(reading,2) + 0.000854596860691 * reading + 0.065440348345433;
+  return (-0.000000000000016 * pow(reading,4) + 0.000000000118171 * pow(reading,3)- 0.000000301211691 * pow(reading,2)+ 0.001109019271794 * reading + 0.034143524634089)+0.005;
+} 
+
+
+void setBatteryParameters()
+{
+
+   // get average adc voltage values 
+   avg_Vdiv_voltage = sum_Vdiv_voltage/NumReadings;
+   Vbat = avg_Vdiv_voltage/Resistor_ratio +0.06;
+
+   double Vbat_d = avg_Vdiv_voltage/Resistor_ratio+0.06;
+
+Serial.print("Vdiv_voltage Double = ");
+Serial.println(Vbat_d,7);
+   
+
+   avg_Iout_voltage = sum_Iout_voltage/NumReadings;
+   Iout = (Iout_voltage/sensitivity);// - Inverteroffset;
+
+   if (Iout >0.3)
+   {
+    Iout = Iout - Inverteroffset;
+    
+   }
+   else if (Iout <0.3)
+   {
+    Iout= 0.0;
+    
+   }
+   
+   power = Iout*Vbat;
+
+Serial.print("avg_Vdiv_voltage = ");
+Serial.println(avg_Vdiv_voltage,7);
+
+Serial.print("Vbat = ");
+Serial.println(Vbat);
+
+Serial.print("avg_Iout_voltage = ");
+Serial.println(avg_Iout_voltage,7);
+
+Serial.print("Iout = ");
+Serial.println(Iout);
+
+Serial.print("Power = ");
+Serial.println(power);
+
+Serial.print("NumReadings = ");
+Serial.println(NumReadings);
+
+Serial.println();
+Serial.println();
 
 
 
 }
-
-
-
-void setup() {
-  
-  SerialMon.begin(115200);
-  //setupDisplay();
-  //displayVbat();
-
-
- // SerialBT.begin("ESP32test"); //Bluetooth device name
-  //CollectQualitativeData();
- // SerialBT.end(); //Bluetooth device name
-
-  
-  setupTimer();
-  setupSIM800L();
-  //setupSD();
-  // Configure the wake up source as timer wake up  
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); // POSSIBLE TIMER DISRUPTION??
-}
-
 
 // Pot : white -gnd
 //     : black adc
 //     : Brown 3.3v
-
-int c=0;
-
-
-
-void loop() 
-
-{
-
-c++;
-
-
-
-  if (SDfail ==1) 
-  {
-    setupSD();
-  }
-  
-  //setVbat();
-  //displayVbat();
-
-
- // AppendQueryParameters();      //    IF ERROR REPLACE HERE
-
-
-  SerialMon.print("Connecting to APN: ");
-   SerialBT.print("Connecting to APN: ");
-  
-  SerialMon.print(apn);
-  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
-    SerialMon.println(" fail");
-    SerialBT.println(" fail");
-  }
-  else 
-  {
-    SerialMon.println(" OK");
-    SerialBT.println(" OK");
-    
-    SerialMon.print("Connecting to ");
-    SerialBT.print("Connecting to ");
-    
-    SerialMon.print(server);
-    SerialBT.print(server);
-    if (!client.connect(server, port)) {
-      SerialMon.println(" fail");
-      SerialBT.println(" fail");
-
-    }
-    else 
-    {                          // CONNECTION TO SERVER SUCCESFUL
-      SerialMon.println(" OK");
-      SerialBT.println(" OK");
-      SerialMon.print(F("Performing HTTP GET request... "));
-      SerialBT.print("Performing HTTP GET request... ");
-
-      http.connectionKeepAlive();  // Currently, this is needed for HTTPS
-
-      //setVbat();
-      AppendQueryParameters();
-      logSDCard();
-      
-      Serial.print("Avg Voltage = ");
-      Serial.println(Vbat);
-
-
-      
-      
-      // Disable timer here??
-
-      int err = http.get(resource);
-
- 
-      if (err != 0) 
-      {
-       SerialMon.println(F("failed to connect")); /// occurring
-       SerialBT.println("failed to connect"); 
-       
-       delay(10000);
-       return;
-      }
-
-      int status = http.responseStatusCode();
-      SerialMon.print(F("Response status code: "));
-      SerialMon.println(status);
-      SerialBT.println(status);
-      
-      if (!status) 
-      {
-        delay(10000);
-        return;
-      }
-
-      http.stop();
-      SerialMon.println(F("Server disconnected"));
-      SerialBT.println("Server disconnected");
-      SerialMon.println();
-
-      // Put ESP32 into deep sleep mode (with timer wake up)
-      //esp_deep_sleep_start();
-
-       delay(1000);
-
-      memset(resource, 0, sizeof resource);
-      strcpy(resource,orig_resource);
-       
-    }
-  }
-}
-   
