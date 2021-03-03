@@ -111,11 +111,22 @@ const char simPIN[]   = "";
 
 // Server details
 const char server[] = "script.google.com"; // domain name: example.com, maker.ifttt.com, etc
+
+const char redirect_server[] = "script.googleusercontent.com";
+
 const char orig_resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?";
 char resource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?"; //must be pre-defined buffer
 char staticresource[160] = "/macros/s/AKfycbzTAkuhTqJfi-EofdpOjBxKNlDe18fdTkOPHMOuOwvl9zbDqfPHwbb1/exec?Vbat=1.00&Iin=2&Iout=5&Cooker=RiceCooker&Meal=Rice&Portion=3&Method=Boil&ndplr=1";
 //const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
 const int  port = 443;                             // server port number
+
+String redirect_resource_string;
+char redirect_resource[450] ="";
+
+int status;
+
+
+
 
 char CharVbat[6] = "";
 char CharIout[6] = "";
@@ -178,6 +189,7 @@ TwoWire I2CPower = TwoWire(0);
 // TinyGSM Client for Internet connection
 TinyGsmClientSecure client(modem);
 HttpClient          http(client, server, port);
+HttpClient          http_redirect(client, redirect_server, port);
 
 #define uS_TO_S_FACTOR 1000000     /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  3600        /* Time ESP32 will go to sleep (in seconds) 3600 seconds = 1 hour */
@@ -306,6 +318,7 @@ delay(200);
     }
     else 
     {                          // CONNECTION TO SERVER SUCCESFUL
+      
       SerialMon.println(" OK");
       SerialBT.println(" OK");
       SerialMon.print(F("Performing HTTP GET request... "));
@@ -337,55 +350,34 @@ delay(200);
        return;
       }
 
-      int status = http.responseStatusCode();
+      status = http.responseStatusCode();
       SerialMon.print(F("Response status code: "));
       SerialMon.println(status);
       SerialBT.println(status);
 
 
         SerialMon.println(F("Response Headers:"));
-    while (http.headerAvailable()) {
-    String headerName = http.readHeaderName();
-    String headerValue = http.readHeaderValue();
+    while (http.headerAvailable()) 
+    {
+      String headerName = http.readHeaderName();
+      String headerValue = http.readHeaderValue();
 
 
     if (status ==302 && headerName == "Location")
     {
- 
-      Serial.println("Location Found");  
-      Serial.println();
-      Serial.println(headerValue);
-      Serial.println("Location Edit ");  
 
-      headerValue.remove(0,8);
-      Serial.println(headerValue);
+      redirect_resource_string = headerValue;
 
-/*
-        int err = http.get(headerValue);
- 
-      if (err != 0) 
-      {
-       SerialMon.println(F("failed to connect")); /// occurring
-       SerialBT.println("failed to connect"); 
-       
-       delay(10000);
-       return;
-      }
+      Serial.println(redirect_resource_string);
 
-    */
-
-    
     //SerialMon.println("    " + headerName + " : " + headerValue);
-  }
+    }
   }
       String body = http.responseBody();
       SerialMon.println(F("Response:"));
       SerialMon.println(body);
 
 
-
-      
-      
       if (!status) 
       {
         delay(10000);
@@ -397,6 +389,83 @@ delay(200);
       SerialBT.println("Server disconnected");
       SerialMon.println();
 
+
+    }
+//............IF REDIRECT..........................//
+
+Serial.print("status = ");
+Serial.print(status);
+
+      if (status == 302) 
+
+
+Serial.println("So its 302...  ");
+
+      redirect_resource_string.remove(0,36);
+
+      redirect_resource_string.toCharArray(redirect_resource,redirect_resource_string.length()+1); // correct length????????????????????????????????????????
+      Serial.println("Redirect URL = ");
+      Serial.println(redirect_resource);
+
+
+      Serial.print("Connecting to ");
+      SerialBT.print("Connecting to ");
+    
+      Serial.print(redirect_server);
+      SerialBT.print(redirect_server);  
+
+      {
+       if (!client.connect(redirect_server, port)) 
+       {
+        
+          Serial.println(" fail");
+          SerialBT.println(" fail");
+
+       }
+       else 
+        {                                    // CONNECTION TO SERVER SUCCESFUL
+          Serial.println(" OK");
+          SerialBT.println(" OK");
+          Serial.print(F("Performing HTTP GET request... "));
+
+          http_redirect.connectionKeepAlive();  // Currently, this is needed for HTTPS
+          int err = http_redirect.get(redirect_resource);
+ 
+        if (err != 0) 
+        {
+          Serial.println(F("failed to connect")); /// occurring
+          SerialBT.println("failed to connect"); 
+         
+          delay(10000);
+          return;
+        }
+        
+          int status = http_redirect.responseStatusCode();
+          Serial.print(F("Response status code: "));
+          SerialMon.println(status);
+          SerialBT.println(status);
+
+          while (http_redirect.headerAvailable()) 
+          {
+          String headerName = http_redirect.readHeaderName();
+          String headerValue = http_redirect.readHeaderValue();
+          Serial.println("    " + headerName + " : " + headerValue);
+
+          }
+
+          
+          String body = http_redirect.responseBody();
+          Serial.println(F("Response:"));
+          Serial.println(body);
+
+
+          
+        }
+    
+       http_redirect.stop();
+      }
+
+      
       // Put ESP32 into deep sleep mode (with timer wake up)
       //esp_deep_sleep_start();
 
@@ -406,20 +475,15 @@ delay(200);
       strcpy(resource,orig_resource);
 
       Serial.println();
-      Serial.println("New Reasource =");
+      Serial.println("New Resource =");
       Serial.println(resource);
       Serial.println();
 
       
        
-    }
+    
   }
 
-
-
-//Serial.print("avg_Vdiv_voltage = ");
-//Serial.println(avg_Vdiv_voltage,7);
-//delay(10000);
   
 }
 
