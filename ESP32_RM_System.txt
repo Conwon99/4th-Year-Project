@@ -137,6 +137,7 @@ int status;
 char grid_resource[] = "/macros/s/AKfycbyTo6-xW74Ve9T5S5Edy3D9_7PBhewBp-2OCBCGJ-BLDnrdDLb6ZsD2fwaij9SseZay/exec";
 String GridCapacity;
 int GridCapacity_int;
+bool ChargingActive = false;
 
 
 char CharVbat[6] = "";
@@ -438,12 +439,65 @@ String getResource(const char* server,char* resource)
   
 }
 
+
+void sendParamaters(char* resource)
+{
+     SerialMon.print(F("Performing HTTP GET request... "));
+     SerialBT.print("Performing HTTP GET request... ");
+    
+     http.connectionKeepAlive();  // Currently, this is needed for HTTPS
+
+
+     int err = http.get(resource);
+ 
+      if (err != 0) 
+      {
+       SerialMon.println(F("failed to connect")); /// occurring
+       SerialBT.println("failed to connect"); 
+       
+       delay(10000);
+       
+      }
+
+      status = http.responseStatusCode();
+      SerialMon.print(F("Response status code: "));
+      SerialMon.println(status);
+      SerialBT.println(status);
+
+
+      String body = http.responseBody();
+      SerialMon.println(F("Response:"));
+      SerialMon.println(body);
+
+
+      if (!status) 
+      {
+        delay(10000);
+        
+      }
+
+      http.stop();
+      SerialMon.println(F("Server disconnected"));
+      SerialBT.println("Server disconnected");
+      SerialMon.println();
+
+}
+
+
+
+
+
+
+
+
 void loop() 
 
 {
 //SerialMon.print("Mainloop Start");
 
-if (pressed)  // if button pressed, check server to see if sufficient energy to charge 
+
+if (pressed || ChargingActive)  // if button pressed, check server to see if sufficient energy to charge 
+                                // or if in state of charging , continually check to see if sufficient energy
 {
 // display....
 Serial.printf("Button 1 has been pressed \n",ButtonPresses);
@@ -478,12 +532,14 @@ Serial.println("GPRS Connected!");
         {
            Serial.println("Charging Enabled");
            digitalWrite(Relay_Pin, HIGH);
+           ChargingActive = true;
           
         }
         else 
         {
            Serial.println("Charging Disabled");
            digitalWrite(Relay_Pin, LOW);
+           ChargingActive = false;
           
         }
       }
@@ -498,43 +554,8 @@ Serial.println("GPRS Connected!");
 Serial.println("Finish");
   pressed = false;
 }
-/*
-  if(connectServer(server))
-  {
-    
-    redirect_resource_string = getRedirectResource(server,resource);
 
-    if (redirect_resource_string != "fail")
-    {
-    
-    redirect_resource_string.toCharArray(redirect_resource,redirect_resource_string.length()+1);
-      
-    GridCapacity = getResource(grid_resource,redirect_resource);
-
-    if (GridCapacity != "fail") 
-    {
-        GridCapacity_int = GridCapacity.toInt();
-        
-        if (GridCapacity_int <90)
-        {
-          Serial.printf("Grid Capacity at %d percent, Enabling Charge",GridCapacity_int);
-        }
-        else 
-        {
-          Serial.printf("Grid Capacity at %d percent, Disabling Charge",GridCapacity_int);
-        }
-    }
-    
-    }
-    
-    }
-    //redirect_resource = getRedirectResource(server,resource);
-  }
-
-*/
    
-
-
 //setBatteryParameters();
 
 //sum_Iout_voltage =0;
@@ -554,215 +575,36 @@ Serial.println("Finish");
 
  // AppendQueryParameters();      //    IF ERROR REPLACE HERE
 
-if (LoadActive) 
-{
+ //LoadActive = true;
 
-   SerialMon.print("Connecting to APN: ");
-   SerialBT.print("Connecting to APN: ");
-  
-  SerialMon.print(apn);
-  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
-    SerialMon.println(" fail");
-    SerialBT.println(" fail");
-  }
-  else 
+  if (LoadActive || ChargingActive) 
   {
-    SerialMon.println(" OK");
-    SerialBT.println(" OK");
+  
+  Serial.println("Load Active");
+  
 
-
-   // setBatteryParameters();
-    
-    SerialMon.print("Connecting to ");
-    SerialBT.print("Connecting to ");
-    
-    SerialMon.print(server);
-    SerialBT.print(server);
-    if (!client.connect(server, port)) {
-      SerialMon.println(" fail");
-      SerialBT.println(" fail");
-
-    }
-    else 
-    {                          // CONNECTION TO SERVER SUCCESFUL
-      
-      SerialMon.println(" OK");
-      SerialBT.println(" OK");
-      SerialMon.print(F("Performing HTTP GET request... "));
-      SerialBT.print("Performing HTTP GET request... ");
-
-
-    
-      http.connectionKeepAlive();  // Currently, this is needed for HTTPS
-
- //     setBatteryParameters();
-  //    AppendQueryParameters();
-      //displayVbat();
- //     logSDCard();
-      
-      ReadingsTaken == true; // reset sum values
-      
-
-      // Disable timer here??
-
-     //int err = http.get(resource);
-       int err = http.get(staticresource);
- 
-      if (err != 0) 
-      {
-       SerialMon.println(F("failed to connect")); /// occurring
-       SerialBT.println("failed to connect"); 
-       
-       delay(10000);
-       return;
-      }
-
-      status = http.responseStatusCode();
-      SerialMon.print(F("Response status code: "));
-      SerialMon.println(status);
-      SerialBT.println(status);
-
-
-        SerialMon.println(F("Response Headers:"));
-    while (http.headerAvailable()) 
+    if(GPRSconnect())
     {
-      String headerName = http.readHeaderName();
-      String headerValue = http.readHeaderValue();
-
-
-    if (status ==302 && headerName == "Location")
-    {
-
-      redirect_resource_string = headerValue;
-
-      Serial.println(redirect_resource_string);
-
-    //SerialMon.println("    " + headerName + " : " + headerValue);
-    }
-  }
-      String body = http.responseBody();
-      SerialMon.println(F("Response:"));
-      SerialMon.println(body);
-
-
-      if (!status) 
+      Serial.println("GPRS Connected!");
+    
+      if(connectServer(server))
       {
-        delay(10000);
-        return;
+        Serial.println("Server Connected!");
+    
+        sendParamaters(staticresource);  // Send Paramaters to Server // Return response - what if server error?
+    
       }
-
-      http.stop();
-      SerialMon.println(F("Server disconnected"));
-      SerialBT.println("Server disconnected");
-      SerialMon.println();
-
-
-    }
-//............IF REDIRECT..........................//
-
-Serial.print("status = ");
-Serial.print(status);
-
-      if (status == 302) 
-
-
-Serial.println("So its 302...  ");
-
-      redirect_resource_string.remove(0,36);
-
-      redirect_resource_string.toCharArray(redirect_resource,redirect_resource_string.length()+1); // correct length????????????????????????????????????????
-      Serial.println("Redirect URL = ");
-      Serial.println(redirect_resource);
-
-
-      Serial.print("Connecting to ");
-      SerialBT.print("Connecting to ");
-    
-      Serial.print(redirect_server);
-      SerialBT.print(redirect_server);  
-
-      {
-       if (!client.connect(redirect_server, port)) 
-       {
-        
-          Serial.println(" fail");
-          SerialBT.println(" fail");
-
-       }
-       else 
-        {                                    // CONNECTION TO SERVER SUCCESFUL
-          Serial.println(" OK");
-          SerialBT.println(" OK");
-          Serial.print(F("Performing HTTP GET request... "));
-
-          http_redirect.connectionKeepAlive();  // Currently, this is needed for HTTPS
-          int err = http_redirect.get(redirect_resource);
- 
-        if (err != 0) 
-        {
-          Serial.println(F("failed to connect")); /// occurring
-          SerialBT.println("failed to connect"); 
-         
-          delay(10000);
-          return;
-        }
-        
-          int status = http_redirect.responseStatusCode();
-          Serial.print(F("Response status code: "));
-          SerialMon.println(status);
-          SerialBT.println(status);
-
-          while (http_redirect.headerAvailable()) 
-          {
-          String headerName = http_redirect.readHeaderName();
-          String headerValue = http_redirect.readHeaderValue();
-          Serial.println("    " + headerName + " : " + headerValue);
-
-          }
-
-          
-          String body = http_redirect.responseBody();
-          Serial.println(F("Response:"));
-          Serial.println(body);
-
-
-          
-        }
-    
-       http_redirect.stop();
-      }
-
       
-      // Put ESP32 into deep sleep mode (with timer wake up)
-      //esp_deep_sleep_start();
-
-       delay(1000);
-
-      memset(resource, 0, sizeof resource);
-      strcpy(resource,orig_resource);
-
-      Serial.println();
-      Serial.println("New Resource =");
-      Serial.println(resource);
-      Serial.println();
-
-      
-       
     
-  }
-
+     }
+  
+        
+   }
+      //redirect_resource_string = getRedirectResource(server,resource);
+    
+    
+  
 }
-
-
-}
-
-
-
-
-
-
-
-
 
 
 
@@ -1072,12 +914,6 @@ if (digitalRead(ButtonPin) ==0)
     }
 
 
- 
-
-
-
-
-
     Vdiv_voltage = ReadVoltage(Vdiv_pin);
     sum_Vdiv_voltage += Vdiv_voltage;
 
@@ -1091,13 +927,15 @@ if (digitalRead(ButtonPin) ==0)
 
     if (Iout_voltage >0.3)     // Start Count
     {
-    //  bool LoadActive =true;
+      LoadActive =true;
     //  int IoutOnCount++;
       
-
+    }
+    else 
+    {
+      LoadActive =false;
       
     }
-
    //Serial.print("Iout_voltage = ");
    // Serial.println(Iout_voltage);
 //
