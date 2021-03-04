@@ -108,7 +108,7 @@ uint32_t  ButtonPresses =0;
 bool pressed = false;
 
 //Relay Pin
-int Relay_Pin = 27; //32
+int Relay_Pin = 14; //32
 
 // Your GPRS credentials (leave empty, if not needed)
 const char apn[]      = "orangeinternet"; // APN (example: internet.vodafone.pt) use https://wiki.apnchanger.org
@@ -260,6 +260,7 @@ void setup() {
   Resistor_ratio = R2/(R2+R1);
   pinMode(ButtonPin,INPUT_PULLUP);
   pinMode(Relay_Pin,OUTPUT);
+  digitalWrite(Relay_Pin, LOW);
   
   attachInterrupt(ButtonPin, Button_ISR, FALLING);
 
@@ -472,8 +473,19 @@ Serial.println("GPRS Connected!");
 
       if (GridCapacity != "fail")
       {
-        Serial.println(GridCapacity);
-        
+       GridCapacity_int = GridCapacity.toInt();
+        if (GridCapacity_int <90)
+        {
+           Serial.println("Charging Enabled");
+           digitalWrite(Relay_Pin, HIGH);
+          
+        }
+        else 
+        {
+           Serial.println("Charging Disabled");
+           digitalWrite(Relay_Pin, LOW);
+          
+        }
       }
 
       
