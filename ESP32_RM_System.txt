@@ -103,7 +103,7 @@ int SDfail=0;
 
 
 // Button
-int ButtonPin = 35;
+int ButtonPin = 32;
 uint32_t  ButtonPresses =0;
 bool pressed = false;
 
@@ -134,7 +134,9 @@ char redirect_resource[450] ="";
 
 int status;
 
-
+char grid_resource[] = "/macros/s/AKfycbyTo6-xW74Ve9T5S5Edy3D9_7PBhewBp-2OCBCGJ-BLDnrdDLb6ZsD2fwaij9SseZay/exec";
+String GridCapacity;
+int GridCapacity_int;
 
 
 char CharVbat[6] = "";
@@ -200,6 +202,8 @@ TinyGsmClientSecure client(modem);
 HttpClient          http(client, server, port);
 HttpClient          http_redirect(client, redirect_server, port);
 
+
+
 #define uS_TO_S_FACTOR 1000000     /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP  3600        /* Time ESP32 will go to sleep (in seconds) 3600 seconds = 1 hour */
 
@@ -237,8 +241,9 @@ void setBatteryParameters(void);
 
 void IRAM_ATTR Button_ISR() {
   
-  ButtonPresses += 1;
+ // ButtonPresses += 1;
   pressed = true;
+  //Serial.println(ButtonPresses);
   //button1.pressed = true;
 }
 
@@ -272,19 +277,251 @@ void setup() {
 
 
 
+int GPRSconnect() {
+
+ SerialMon.print("Connecting to APN: ");
+   SerialBT.print("Connecting to APN: ");
+  
+  SerialMon.print(apn);
+  if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
+    SerialMon.println(" fail");
+    SerialBT.println(" fail");
+    return 0;
+  }
+  else 
+  {
+    SerialMon.println(" OK");
+    SerialBT.println(" OK");
+    return 1;
+
+  }
+}
+
+int connectServer(const char* server)
+{
+  SerialMon.print("Connecting to ");
+    SerialBT.print("Connecting to ");
+    
+    SerialMon.print(server);
+    SerialBT.print(server);
+    if (!client.connect(server, port)) {
+      SerialMon.println(" fail");
+      SerialBT.println(" fail");
+      return 0;
+    }
+    else 
+    {                          // CONNECTION TO SERVER SUCCESFUL
+      SerialMon.println(" OK");
+      SerialBT.println(" OK");
+ 
+      return 1;
+
+    }
+}
+
+
+String getRedirectResource(const char* server,char* resource)
+{
+ //HttpClient  http(client, server, port);
+ 
+ SerialMon.print(F("Performing HTTP GET request... "));
+ SerialBT.print("Performing HTTP GET request... ");
+
+ http.connectionKeepAlive();  // Currently, this is needed for HTTPS
+
+       int err = http.get(resource);
+ 
+      if (err != 0) 
+      {
+       SerialMon.println(F("failed to connect")); /// occurring
+       SerialBT.println("failed to connect"); 
+       
+       delay(10000);
+       return "fail";
+      }
+
+      status = http.responseStatusCode();
+      SerialMon.print(F("Response status code: "));
+      SerialMon.println(status);
+      SerialBT.println(status);
+
+
+       // SerialMon.println(F("Response Headers:"));
+    while (http.headerAvailable()) 
+    {
+      String headerName = http.readHeaderName();
+      String headerValue = http.readHeaderValue();
+
+
+    if (status ==302 && headerName == "Location")
+    {
+      // Dont use string??
+      redirect_resource_string = headerValue;
+
+      Serial.println(redirect_resource_string);
+
+    //SerialMon.println("    " + headerName + " : " + headerValue);
+    }
+  }
+     // String body = http.responseBody();
+    //  SerialMon.println(F("Response:"));
+     // SerialMon.println(body);
+
+
+      if (!status) 
+      {
+        delay(10000);
+      return "fail";
+      }
+
+      http.stop();
+      SerialMon.println(F("Server disconnected"));
+      SerialBT.println("Server disconnected");
+      SerialMon.println();
+
+      redirect_resource_string.remove(0,36);
+     // redirect_resource_string.toCharArray(redirect_resource,redirect_resource_string.length()+1); // correct length????????????????????????????????????????
+      //Serial.println("Redirect URL = ");
+      //Serial.println(redirect_resource);
+
+     // return redirect_resource;
+        return redirect_resource_string;
+
+}
+
+
+String getResource(const char* server,char* resource)
+{
+ // HttpClient  http(client, server, port);
+  
+     SerialMon.print(F("Performing HTTP GET request... "));
+     SerialBT.print("Performing HTTP GET request... ");
+    
+     http_redirect.connectionKeepAlive();  // Currently, this is needed for HTTPS
+
+
+     int err = http_redirect.get(resource);
+ 
+      if (err != 0) 
+      {
+       SerialMon.println(F("failed to connect")); /// occurring
+       SerialBT.println("failed to connect"); 
+       
+       delay(10000);
+       return "fail";
+      }
+
+      status = http_redirect.responseStatusCode();
+      SerialMon.print(F("Response status code: "));
+      SerialMon.println(status);
+      SerialBT.println(status);
+
+
+      String body = http_redirect.responseBody();
+      SerialMon.println(F("Response:"));
+      SerialMon.println(body);
+
+
+      if (!status) 
+      {
+        delay(10000);
+        return "fail";
+      }
+
+      http_redirect.stop();
+      SerialMon.println(F("Server disconnected"));
+      SerialBT.println("Server disconnected");
+      SerialMon.println();
+
+      return body;  
+  
+}
+
 void loop() 
 
 {
 //SerialMon.print("Mainloop Start");
 
-if (pressed)
-  {
-        Serial.printf("Button 1 has been pressed %u times\n",ButtonPresses);
-        // Print to display
-              
+if (pressed)  // if button pressed, check server to see if sufficient energy to charge 
+{
+// display....
+Serial.printf("Button 1 has been pressed \n",ButtonPresses);
 
-        pressed = false;
+if(GPRSconnect())
+{
+Serial.println("GPRS Connected!");
+
+  if(connectServer(server))
+  {
+    Serial.println("Server Connected!");
+
+    redirect_resource_string = getRedirectResource(server,grid_resource);
+    
+    if (redirect_resource_string !="fail")
+    {
+      Serial.println("Obtained Redirect Resource!");
+      Serial.println(redirect_resource_string);
+      redirect_resource_string.toCharArray(redirect_resource,redirect_resource_string.length()+1);
+
+     // HttpClient  http(client, redirect_server, port);
+
+      if(connectServer(redirect_server))   // Need to use another client
+      {
+        Serial.println("Connected to Redirect Server!");
+        GridCapacity = getResource(redirect_server,redirect_resource);
+
+      if (GridCapacity != "fail")
+      {
+        Serial.println(GridCapacity);
+        
+      }
+
+      
+      }
+      //redirect_resource_string = getRedirectResource(server,resource);
+    }
+    
   }
+  }
+Serial.println("Finish");
+  pressed = false;
+}
+/*
+  if(connectServer(server))
+  {
+    
+    redirect_resource_string = getRedirectResource(server,resource);
+
+    if (redirect_resource_string != "fail")
+    {
+    
+    redirect_resource_string.toCharArray(redirect_resource,redirect_resource_string.length()+1);
+      
+    GridCapacity = getResource(grid_resource,redirect_resource);
+
+    if (GridCapacity != "fail") 
+    {
+        GridCapacity_int = GridCapacity.toInt();
+        
+        if (GridCapacity_int <90)
+        {
+          Serial.printf("Grid Capacity at %d percent, Enabling Charge",GridCapacity_int);
+        }
+        else 
+        {
+          Serial.printf("Grid Capacity at %d percent, Disabling Charge",GridCapacity_int);
+        }
+    }
+    
+    }
+    
+    }
+    //redirect_resource = getRedirectResource(server,resource);
+  }
+
+*/
+   
+
 
 //setBatteryParameters();
 
@@ -805,6 +1042,11 @@ void IRAM_ATTR onTimer() // Read values every 0.2s
                          // large time difference between start of cook and transmission of values
                          // two variables on server..reading made vs reading recieved
 {
+
+if (digitalRead(ButtonPin) ==0)
+{
+  pressed = true;
+}
 
   
 
