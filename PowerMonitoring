@@ -15,7 +15,7 @@ float sensitivity = 0.1;  //int sensitivity = 0.1; //100mV/A
 double Vbat = 0;
 double power;
 
-float Inverteroffset = 0.81;
+double InverterOffset; 
 
 
 double ACS712_Voltage_Filter;
@@ -68,85 +68,101 @@ double Vbat_1, Vbat_2;
 double currentValue_filter;
 double currentValue_before;
 
+
+double currentValue_avg_filter;
+double currentValue_avg_before;
+
+volatile int responseTimer=0;
+double ACS712_Voltage_prev;
+double alpha_current=0.1; 
+bool LoadChange= false;
+
 hw_timer_t * timer = NULL;
 
 void IRAM_ATTR onTimer(){
 
-// Current
+  // Current - voltage and avareaged current gerts filtered - double filtered
+  
+  ACS712_Voltage = ReadVoltage(ACS712_Pin) - offsetVoltage;
 
-ACS712_Voltage = ReadVoltage(ACS712_Pin) - offsetVoltage;
-
-
-
-ACS712_Voltage_Filter = filterVal(ACS712_Voltage,ACS712_Voltage_Before,0.1);
-ACS712_Voltage_Before = ACS712_Voltage_Filter;
-
-currentValue = ACS712_Voltage_Filter*10;        // 100mV/A    so 1V = 10A
-
-
-currentValue_filter = filterVal(currentValue,currentValue_before,0.1);
-currentValue_before = currentValue_filter;
-
-
-currentValue_sum +=currentValue_filter;
-
-// Vdiv
-
-Vdiv_Voltage = ReadVoltage(Vdiv_pin);
-
-
-Vbat = Vdiv_Voltage/Resistor_ratio;
-Vbat_filter = filterVal(Vbat,Vbat_before,0.1);
-Vbat_before = Vbat_filter;
-
-
-//Vdiv_Voltage_Filter = filterVal(Vdiv_Voltage,Vdiv_Voltage_Before,0.5);
-//Vdiv_Voltage_Before = Vdiv_Voltage_Filter;
-//
-//Vdiv_Voltage_Filter_1 = filterVal(Vdiv_Voltage,Vdiv_Voltage_Before,0.2);
-//Vdiv_Voltage_Before_1 = Vdiv_Voltage_Filter_2;
-//
-//Vdiv_Voltage_Filter_2 = filterVal(Vdiv_Voltage,Vdiv_Voltage_Before,0.1);
-//Vdiv_Voltage_Before_2 = Vdiv_Voltage_Filter_2;
-
-
-//Vbat_1 = Vdiv_Voltage_Filter_1/Resistor_ratio;
-//Vbat_2 = Vdiv_Voltage_Filter_2/Resistor_ratio;
-
-
-
-
-// Vmultimeter = 12.08-12.09
-Serial.print(Time);
-Serial.print(",");
-Serial.print(Vbat_filter,3);
-Serial.print(",");
-Serial.print(currentValue,3);
-Serial.print(",");
-Serial.print(currentValue_filter,3);
-Serial.print(",");
-Serial.println(currentValue_avg,3);
-
-
-
-Vdiv_Voltage_sum +=Vdiv_Voltage_Filter;
-
-
-if (numReadings >=9)
-{
-
-  AverageTaken = true;
-}
-
-numReadings++;
-Time+=0.2;
-}
-
-double filterVal(double value,double value_before, double alpha)
-{
-//double alpha = 0.5;
-double filtered_value = alpha*value + (1-alpha)*value_before;
-return filtered_value;
+ if ((ACS712_Voltage-ACS712_Voltage_prev)> 0.1)    // if large spike (ie load turned on)
+  {
+    //LoadChange = true;
+    Serial.println("yes");
+    alpha_current = 1;    // stop filtering
+  }
+  else
+  
+   {
+    alpha_current=0.1;
+   }
+  
+  ACS712_Voltage_prev = ACS712_Voltage;
+  
+ 
+  
+  
+  ACS712_Voltage_Filter = filterVal(ACS712_Voltage,ACS712_Voltage_Before,alpha_current);
+  ACS712_Voltage_Before = ACS712_Voltage_Filter;
+  
+  currentValue = ACS712_Voltage_Filter*10;        // 100mV/A    so 1V = 10A
+  
+  
+  currentValue_filter = filterVal(currentValue,currentValue_before,alpha_current);
+  currentValue_before = currentValue_filter;
+  
+  
+  currentValue_sum +=currentValue_filter;
+  
+  // Vdiv..........................
+  
+  Vdiv_Voltage = ReadVoltage(Vdiv_pin);
+  Vdiv_Voltage_sum +=Vdiv_Voltage;
+  
+  
+  
+  // Look at difference in previous value, if above threshold 
+  // start timer, if still big difference in value then override avg value
+  
+  
+  
+  
+  /*
+  
+  Serial.print(Time);
+  Serial.print(",");
+  Serial.print(Vbat_filter,3);
+  Serial.print(",");
+  Serial.print(currentValue,3);
+  Serial.print(",");
+  Serial.print(currentValue_filter,3);
+  Serial.print(",");
+  Serial.print(currentValue_avg,3);
+  Serial.print(",");
+  Serial.println(power,3);
+  
+  */
+  
+  
+  //Serial.println(ACS712_Voltage,3);
+  
+  if (numReadings >=4)
+  {
+  
+    AverageTaken = true;
+  }
+  
+  numReadings++;
+  Time+=0.2;
+  }
+  
+  
+  
+  double filterVal(double value,double value_before, double alpha)
+  {
+  //double alpha = 0.5;
+  double filtered_value = alpha*value + (1-alpha)*value_before;
+  return filtered_value;
   
 }
 
@@ -192,37 +208,61 @@ if (AverageTaken ==true)
 
 {
 
-  AverageTaken = false;
+
 
   currentValue_avg = currentValue_sum/numReadings;
-  Vdiv_Voltage_avg = Vdiv_Voltage_sum/numReadings;
+
+  currentValue_avg_filter =  filterVal(currentValue_avg,currentValue_avg_before,alpha_current);
+  currentValue_avg_before =  currentValue_avg_filter;
   
-  numReadings=0;
-  currentValue_sum =0;
+  Vdiv_Voltage_avg = Vdiv_Voltage_sum/numReadings;
 
-  Vbat = Vdiv_Voltage_avg/Resistor_ratio;
-
-    if (currentValue_avg < 0.2 )        // if between -0.02 and 0.02
+    if (currentValue_avg < 0.2 )        // if off 
   {
-    currentValue_avg=0;
+    currentValue_avg_filter=0;
+    InverterOffset = 0;
+  }
+  else 
+  {
+    InverterOffset = 10.96;
     
   }
 
-  power = Vbat*currentValue_avg;
+  Vbat = Vdiv_Voltage_avg/Resistor_ratio;
+  Vbat_filter = filterVal(Vbat,Vbat_before,0.1);
+  Vbat_before = Vbat_filter;
+  
+  power = Vbat_filter*currentValue_avg_filter - InverterOffset;
+
+  if(power <0)
+  {
+    power = 0;
+  }
+  
 
 
-//
-//Serial.print(Time);
-//Serial.print(",");
-//Serial.print(Vbat,3);
-//Serial.print(",");
-//Serial.print(currentValue_avg,3);
-//Serial.print(",");
-//Serial.print(power,3);
-//Serial.println();
 
-currentValue_sum=0;
-Vdiv_Voltage_sum=0;
+
+
+
+
+
+
+  Serial.print(Time);
+  Serial.print(",");
+  Serial.print(Vbat_filter,3);
+  Serial.print(",");
+  Serial.print(currentValue_avg_filter,3);
+  Serial.print(",");
+  Serial.print(power,3);
+  Serial.println();
+
+
+  
+  numReadings=0;
+  currentValue_sum=0;
+  Vdiv_Voltage_sum=0;
+  AverageTaken = false;
 
 }
 
