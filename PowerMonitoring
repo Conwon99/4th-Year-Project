@@ -1,97 +1,163 @@
+// Power Monitoring
 
-//P=IV
+int ACS712_Pin = 34;
+int Vdiv_pin = 39;
 
-// No load + Power Meter = 0.73A
-//Cooker : 0.81A difference => Inverter+Power Meter takes 0.81A
-
-
-// Inverter consumes 0.44A
-// Power meter idle consumes  0.83-0.44 = 
-// Cooker Power meter 0.75+0.39A = 1.14A greater than calculated
-// 
-
-// Laptop Charger : 32W , 11.58V I = P/V = 32/11.58 = 2.76A  Fluctuations between 30W-35W
-// Measured = 3.2A
-// Difference = 0.44
-
-// Reading Variables
-int NumberofReadings = 0;
 bool AverageTaken = false;
 
+int numReadings=0;
 
-// ACS712 Current Sensor variables
-const int Iout_pin = 36;
-float offsetVoltage = 2.46;
-double Iout = 0;
+//Conversion Variables
+
+double offsetVoltage = 2.464;
+double currentValue = 0;
 float sensitivity = 0.1;  //int sensitivity = 0.1; //100mV/A
-float Inverteroffset = 0.81;
-volatile double Iout_voltage;
-volatile double sum_Iout_voltage=0;
-double avg_Iout_voltage;
-
-
-// Voltage Divider variables
-const int Vdiv_pin= 34;
-double R1 = 99600.0;
-double R2=  5060;
-double Resistor_ratio;
 double Vbat = 0;
-volatile double Vdiv_voltage;
-volatile double sum_Vdiv_voltage=0;
-double avg_Vdiv_voltage;
-
 double power;
 
+float Inverteroffset = 0.81;
 
 
-double ReadVoltage(byte pin){
-  double reading = analogRead(pin); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
-  if(reading < 1 || reading > 4095) return 0;
-   //return -0.000000000009824 * pow(reading,3) + 0.000000016557283 * pow(reading,2) + 0.000854596860691 * reading + 0.065440348345433;
-  return (-0.000000000000016 * pow(reading,4) + 0.000000000118171 * pow(reading,3)- 0.000000301211691 * pow(reading,2)+ 0.001109019271794 * reading + 0.034143524634089)+0.005;
-} 
+double ACS712_Voltage_Filter;
+
+double ACS712_Voltage =0;
+double ACS712_Voltage_Before;
 
 
+double Time = 0;
+double rawCurrentVal =0;
+double currentValue_sum=0;
+double currentValue_avg =0;
 
+
+double maxAmps;
+double minAmps;
+double noise; 
+
+
+ // Vdiv
+
+double R1 = 101000.0;
+double R2=  5080.0;
+ 
+//double Vnow =0;
+//double Vbefore = 12.25;
+//double alpha = 0.05;
+//double Vbef =0.58;
+//double voltage_value_raw=0;
+//double voltage_value_filter =0;
+//double voltage_value_avg_filter =0;
+//double voltage_value_sum_filter = 0;
+
+
+double Resistor_ratio;
+double Vdiv_Voltage;
+double Vdiv_Voltage_Filter;
+double Vdiv_Voltage_Before = 0.58;
+double Vdiv_Voltage_sum;
+double Vdiv_Voltage_avg;
+
+double Vbat_filter;
+double Vbat_before = 12.08;
+
+double Vdiv_Voltage_Filter_1, Vdiv_Voltage_Filter_2;
+double Vdiv_Voltage_Before_1, Vdiv_Voltage_Before_2;
+
+double Vbat_1, Vbat_2;
+
+double currentValue_filter;
+double currentValue_before;
 
 hw_timer_t * timer = NULL;
 
 void IRAM_ATTR onTimer(){
 
+// Current
 
- if (AverageTaken == true)
-    {
-      //NumberofReadings = 0;
-      sum_Iout_voltage =0;
-      sum_Vdiv_voltage =0;
-      AverageTaken = false;
-      
-    }
+ACS712_Voltage = ReadVoltage(ACS712_Pin) - offsetVoltage;
 
 
 
-    Vdiv_voltage = ReadVoltage(Vdiv_pin);
-    sum_Vdiv_voltage += Vdiv_voltage;
+ACS712_Voltage_Filter = filterVal(ACS712_Voltage,ACS712_Voltage_Before,0.1);
+ACS712_Voltage_Before = ACS712_Voltage_Filter;
 
-    Iout_voltage = ReadVoltage(Iout_pin) -offsetVoltage;
-    sum_Iout_voltage += Iout_voltage;
+currentValue = ACS712_Voltage_Filter*10;        // 100mV/A    so 1V = 10A
 
-   //Serial.print("Iout_voltage = ");
-   // Serial.println(Iout_voltage);
+
+currentValue_filter = filterVal(currentValue,currentValue_before,0.1);
+currentValue_before = currentValue_filter;
+
+
+currentValue_sum +=currentValue_filter;
+
+// Vdiv
+
+Vdiv_Voltage = ReadVoltage(Vdiv_pin);
+
+
+Vbat = Vdiv_Voltage/Resistor_ratio;
+Vbat_filter = filterVal(Vbat,Vbat_before,0.1);
+Vbat_before = Vbat_filter;
+
+
+//Vdiv_Voltage_Filter = filterVal(Vdiv_Voltage,Vdiv_Voltage_Before,0.5);
+//Vdiv_Voltage_Before = Vdiv_Voltage_Filter;
 //
-//    Serial.print("Vdiv_ADC = ");
-//    Serial.println(Vdiv_ADC);
+//Vdiv_Voltage_Filter_1 = filterVal(Vdiv_Voltage,Vdiv_Voltage_Before,0.2);
+//Vdiv_Voltage_Before_1 = Vdiv_Voltage_Filter_2;
+//
+//Vdiv_Voltage_Filter_2 = filterVal(Vdiv_Voltage,Vdiv_Voltage_Before,0.1);
+//Vdiv_Voltage_Before_2 = Vdiv_Voltage_Filter_2;
 
-    NumberofReadings++;
+
+//Vbat_1 = Vdiv_Voltage_Filter_1/Resistor_ratio;
+//Vbat_2 = Vdiv_Voltage_Filter_2/Resistor_ratio;
+
+
+
+
+// Vmultimeter = 12.08-12.09
+Serial.print(Time);
+Serial.print(",");
+Serial.print(Vbat_filter,3);
+Serial.print(",");
+Serial.print(currentValue,3);
+Serial.print(",");
+Serial.print(currentValue_filter,3);
+Serial.print(",");
+Serial.println(currentValue_avg,3);
+
+
+
+Vdiv_Voltage_sum +=Vdiv_Voltage_Filter;
+
+
+if (numReadings >=9)
+{
+
+  AverageTaken = true;
 }
 
+numReadings++;
+Time+=0.2;
+}
+
+double filterVal(double value,double value_before, double alpha)
+{
+//double alpha = 0.5;
+double filtered_value = alpha*value + (1-alpha)*value_before;
+return filtered_value;
+  
+}
 
 void setup(void) 
 {
-  Serial.begin(9600); 
 
-
+  pinMode(ACS712_Pin, INPUT);
+  pinMode(Vdiv_pin, INPUT);
   Resistor_ratio = R2/(R2+R1);
+  
+  Serial.begin(9600); 
 
   timer = timerBegin(0, 80, true);
 
@@ -109,57 +175,56 @@ void setup(void)
 
 }
 
+
+double ReadVoltage(byte pin){
+  double reading = analogRead(pin); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
+  if(reading < 1 || reading > 4095) return 0;
+   //return -0.000000000009824 * pow(reading,3) + 0.000000016557283 * pow(reading,2) + 0.000854596860691 * reading + 0.065440348345433;
+  return (-0.000000000000016 * pow(reading,4) + 0.000000000118171 * pow(reading,3)- 0.000000301211691 * pow(reading,2)+ 0.001109019271794 * reading + 0.034143524634089)+0.005;
+} 
+
+
+
 void loop(void) 
 {
 
-//int16_t current_adc1 = ads.readADC_SingleEnded(1); // ADC Reading for Current
+if (AverageTaken ==true)
 
-if (NumberofReadings >= 10 && AverageTaken == false)
-{ 
-  AverageTaken =true;
+{
+
+  AverageTaken = false;
+
+  currentValue_avg = currentValue_sum/numReadings;
+  Vdiv_Voltage_avg = Vdiv_Voltage_sum/numReadings;
   
-   // get average adc voltage values 
-   avg_Vdiv_voltage = sum_Vdiv_voltage/NumberofReadings;
-   Vbat = avg_Vdiv_voltage/Resistor_ratio;
+  numReadings=0;
+  currentValue_sum =0;
 
-   avg_Iout_voltage = sum_Iout_voltage/NumberofReadings;
-   Iout = (Iout_voltage/sensitivity);// - Inverteroffset;
+  Vbat = Vdiv_Voltage_avg/Resistor_ratio;
 
-   if (Iout >0.3)
-   {
-    Iout = Iout - Inverteroffset;
+    if (currentValue_avg < 0.2 )        // if between -0.02 and 0.02
+  {
+    currentValue_avg=0;
     
-   }
-   else if (Iout <0.3)
-   {
-    Iout= 0.0;
-    
-   }
-   
-   power = Iout*Vbat;
+  }
 
-Serial.print("avg_Vdiv_voltage = ");
-Serial.println(avg_Vdiv_voltage,7);
-
-Serial.print("Vbat = ");
-Serial.println(Vbat);
-
-Serial.print("avg_Iout_voltage = ");
-Serial.println(avg_Iout_voltage,7);
-
-Serial.print("Iout = ");
-Serial.println(Iout);
-
-Serial.print("Power = ");
-Serial.println(power);
-
-Serial.print("NumReadings = ");
-Serial.println(NumberofReadings);
-
-Serial.println();
-Serial.println();
+  power = Vbat*currentValue_avg;
 
 
-NumberofReadings = 0;
+//
+//Serial.print(Time);
+//Serial.print(",");
+//Serial.print(Vbat,3);
+//Serial.print(",");
+//Serial.print(currentValue_avg,3);
+//Serial.print(",");
+//Serial.print(power,3);
+//Serial.println();
+
+currentValue_sum=0;
+Vdiv_Voltage_sum=0;
+
 }
+
+
 }
