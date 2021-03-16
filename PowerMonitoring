@@ -75,8 +75,11 @@ double currentValue_avg_before;
 volatile int responseTimer=0;
 double ACS712_Voltage_prev;
 double alpha_current=0.1; 
-bool LoadChange= false;
+double alpha_voltage=0.1;
+bool initVbatbefore = false;
+bool LoadChange = false;
 
+int count=0;
 hw_timer_t * timer = NULL;
 
 void IRAM_ATTR onTimer(){
@@ -85,27 +88,38 @@ void IRAM_ATTR onTimer(){
   
   ACS712_Voltage = ReadVoltage(ACS712_Pin) - offsetVoltage;
 
- if ((ACS712_Voltage-ACS712_Voltage_prev)> 0.1)    // if large spike (ie load turned on)
+ if ((ACS712_Voltage-ACS712_Voltage_prev)> 0.1 || LoadChange==true)    // if large spike (ie load turned on)
   {
-    //LoadChange = true;
+    count++;                       // change value for 0.4s
+    LoadChange = true;
     Serial.println("yes");
+      if (count >2) 
+      {
+        LoadChange =false;
+        alpha_voltage=0.1;
+        alpha_current=0.1;
+        count=0;
+      }
+    
+    alpha_voltage = 1;
     alpha_current = 1;    // stop filtering
   }
-  else
-  
-   {
-    alpha_current=0.1;
-   }
+//  else 
+//  
+//   {
+//    alpha_voltage=0.1;
+//    alpha_current=0.1;
+//   }
   
   ACS712_Voltage_prev = ACS712_Voltage;
   
  
   
+//  
+//  ACS712_Voltage_Filter = filterVal(ACS712_Voltage,ACS712_Voltage_Before,alpha_current);
+//  ACS712_Voltage_Before = ACS712_Voltage_Filter;
   
-  ACS712_Voltage_Filter = filterVal(ACS712_Voltage,ACS712_Voltage_Before,alpha_current);
-  ACS712_Voltage_Before = ACS712_Voltage_Filter;
-  
-  currentValue = ACS712_Voltage_Filter*10;        // 100mV/A    so 1V = 10A
+  currentValue = ACS712_Voltage*10;        // 100mV/A    so 1V = 10A
   
   
   currentValue_filter = filterVal(currentValue,currentValue_before,alpha_current);
@@ -228,8 +242,21 @@ if (AverageTaken ==true)
     
   }
 
+
+
+  // set Vbat_before 
+
+
   Vbat = Vdiv_Voltage_avg/Resistor_ratio;
-  Vbat_filter = filterVal(Vbat,Vbat_before,0.1);
+
+  if (initVbatbefore ==false) 
+  {
+    Vbat_before=Vbat;
+    initVbatbefore=true;
+  }
+
+  
+  Vbat_filter = filterVal(Vbat,Vbat_before,alpha_voltage);
   Vbat_before = Vbat_filter;
   
   power = Vbat_filter*currentValue_avg_filter - InverterOffset;
