@@ -291,16 +291,16 @@ void setup() {
   
   //attachInterrupt(ButtonPin, Button_ISR, FALLING);
 
-    SerialBT.begin("ESP32test"); //Bluetooth device name
+ //   SerialBT.begin("ESP32test"); //Bluetooth device name
  // CollectQualitativeData();
  // SerialBT.end(); //Bluetooth device name
 
   
   setupTimer();
   setupSIM800L();
-
-   setupDisplay();
-   displayParameters();
+  GPRSconnect();
+ //  setupDisplay();
+ //  displayParameters();
  // setupSD();
   // Configure the wake up source as timer wake up  
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); // POSSIBLE TIMER DISRUPTION??
@@ -684,7 +684,7 @@ Serial.println("Finish");
 
  // AppendQueryParameters();      //    IF ERROR REPLACE HERE
 
- //LoadActive = true;
+ LoadActive = true;
 
   if (LoadActive || ChargingActive || CookComplete) 
   {
@@ -702,8 +702,8 @@ Serial.println("Finish");
       {
         Serial.println("Server Connected!");
 
-        getAverageReadings();
-        displayParameters();
+        //getAverageReadings();
+        //displayParameters();
         AppendQueryParameters();
   
         
@@ -726,7 +726,7 @@ Serial.println("Finish");
 
 
 
-//delay(5000);
+//delay(2000);
 //getAverageReadings();
 
 
@@ -1126,7 +1126,7 @@ if (LoadChange ==true)
   LoadChangeCount++;
 
 
-if (LoadChangeCount >=15)
+if (LoadChangeCount >=20)
 {
   Serial.println("reset");
   LoadChange=false;
@@ -1138,7 +1138,7 @@ if (LoadChangeCount >=15)
   Iout_filter = filterVal(Iout,Iout_before,alpha_current);
   Iout_before = Iout_filter;
   
-  Serial.println(Iout_filter,3);
+  //Serial.println(Iout_filter,3);
   Iout_sum +=Iout_filter;
 
 
@@ -1162,6 +1162,12 @@ if (LoadChangeCount >=15)
 
   numReadings++;
   Time+=0.2;
+
+    if (numReadings >=5)
+  {
+
+    getAverageReadings();
+  }
   
 }
 
@@ -1202,7 +1208,7 @@ void getAverageReadings()
 
  Iout_avg = Iout_sum/numReadings;
 
-    if (Iout_avg < 0.5 )        // if off 
+    if (Iout_avg < 1 )        // if off 
   {
     Iout_avg=0;
     InverterOffset = 0;
@@ -1213,7 +1219,7 @@ void getAverageReadings()
     
   }
 
-  Iout_avg -=InverterOffset;
+  //Iout_avg -=InverterOffset;
  
 
   Iout_avg_filter =  filterVal(Iout_avg,Iout_avg_before,alpha_current);
@@ -1240,7 +1246,7 @@ void getAverageReadings()
   Vbat_filter = filterVal(Vbat,Vbat_before,alpha_voltage);
   Vbat_before = Vbat_filter;
   
-  power = Vbat_filter*Iout_avg_filter - InverterOffset;
+  power = Vbat_filter*Iout_avg_filter - InverterOffset -3;
 
   if(power <0)
   {
@@ -1264,6 +1270,8 @@ void getAverageReadings()
   Serial.print(",");
   Serial.print(power,3);
   Serial.println();
+
+
 
 
   
