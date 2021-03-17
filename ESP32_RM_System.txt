@@ -84,6 +84,7 @@ float sensitivity = 0.1;  //int sensitivity = 0.1; //100mV/A
 double Iout_prev;
 int count=0;
 int LoadChangeCount=0;
+bool TurnedOff = false;
 
 // Voltage Divider variables
 const int Vdiv_pin= 39;
@@ -99,6 +100,9 @@ volatile double Vdiv_Voltage_sum;
 double Vdiv_Voltage_avg;
 
 double power;
+double kJ;
+double kJ_Total;
+
 double alpha_current=0.1; 
 double alpha_voltage=0.1;
 bool initVbatbefore = false;
@@ -111,6 +115,8 @@ char QualArray[10][30] = {"","","",""};     // [Qparam][charnum]
 int Qparam=0;
 int charnum = 0;
 String dataMessage;
+
+bool CookComplete = false;
 
 //SD
 int SDfail=0;
@@ -137,9 +143,9 @@ const char server[] = "script.google.com"; // domain name: example.com, maker.if
 
 const char redirect_server[] = "script.googleusercontent.com";
 
-const char orig_resource[150] = "/macros/s/AKfycbyU9xHUQz93jIdueFD28k36ruq2a770PQeCZphTxgbf29IPHsCPeqnRhOLKC7gRUMX-/exec?";
-char resource[230] = "/macros/s/AKfycbyU9xHUQz93jIdueFD28k36ruq2a770PQeCZphTxgbf29IPHsCPeqnRhOLKC7gRUMX-/exec?"; //must be pre-defined buffer
-char staticresource[230] = "/macros/s/AKfycbyU9xHUQz93jIdueFD28k36ruq2a770PQeCZphTxgbf29IPHsCPeqnRhOLKC7gRUMX-/exec?Vbat=11.93&Iout=0.00&FuelType=none&MealType=Dinner&Cooker=RiceCooker&Meal=Rice&Portion=5&Method=Boil&Reheating=No&Experience=No&Feedback=No";
+const char orig_resource[150] = "/macros/s/AKfycbyrjKicYQ95FYJ-BuXknmZmYs2R9I4_shxpDkWON29lepLnkpcPCY-Uo8BpEKs7TWES_w/exec?";
+char resource[230] = "/macros/s/AKfycbyrjKicYQ95FYJ-BuXknmZmYs2R9I4_shxpDkWON29lepLnkpcPCY-Uo8BpEKs7TWES_w/exec?"; //must be pre-defined buffer
+char staticresource[230] = "/macros/s/AKfycbyrjKicYQ95FYJ-BuXknmZmYs2R9I4_shxpDkWON29lepLnkpcPCY-Uo8BpEKs7TWES_w/exec?Vbat=11.93&Iout=0.00&FuelType=none&MealType=Dinner&Cooker=RiceCooker&Meal=Rice&Portion=5&Method=Boil&Reheating=No&Experience=No&Feedback=No";
 //const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
 const int  port = 443;                             // server port number
 
@@ -257,7 +263,7 @@ void setupTimer(void);
 
 //ADC
 double ReadVoltage(byte);
-void setBatteryParameters(void);
+void getAverageReadings(void);
 
 
 double filterVal(double value,double value_before, double alpha);
@@ -274,8 +280,7 @@ double filterVal(double value,double value_before, double alpha);
 void setup() {
   
  SerialMon.begin(115200);
- setupDisplay();
- displayVbat();
+
 
   Resistor_ratio = R2/(R2+R1);
   pinMode(ACS712_Pin, INPUT);
@@ -286,13 +291,16 @@ void setup() {
   
   //attachInterrupt(ButtonPin, Button_ISR, FALLING);
 
- // SerialBT.begin("ESP32test"); //Bluetooth device name
+    SerialBT.begin("ESP32test"); //Bluetooth device name
  // CollectQualitativeData();
  // SerialBT.end(); //Bluetooth device name
 
   
   setupTimer();
   setupSIM800L();
+
+   setupDisplay();
+   displayParameters();
  // setupSD();
   // Configure the wake up source as timer wake up  
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); // POSSIBLE TIMER DISRUPTION??
@@ -524,11 +532,78 @@ void loop()
 
 {
 
+ 
 
 
-LoadActive =true;
+if (TurnedOff) 
+{
+  SerialBT.begin("ESP32test"); //Bluetooth device name
+  SerialBT.println("Are you finished Cooking?");
+
+   char incomingChar;
+char response[5];
+bool ResponseRecieved = false;
+
+charnum = 0;
+
+while (!ResponseRecieved)
+{
   
-//SerialMon.print("Mainloop Start");
+
+if (SerialBT.available()){
+    incomingChar = SerialBT.read();
+    Serial.print(response[charnum]);
+
+    if (incomingChar != '\n'){       // If the incomingChar is different than \n, concatenate that char character to QualArray.
+
+
+      int result;
+      result = iscntrl(incomingChar); // If not printable, = non-zero
+
+      if (result >0) {
+
+        //Serial.print("CONTROL");
+        
+      }
+      else 
+
+      {
+
+      response[charnum] = incomingChar;
+      Serial.print(response[charnum]);
+      charnum++;
+        
+      }
+    }
+      else  // if recieving '\n'
+      
+      {
+        ResponseRecieved = true;
+        Serial.print("Response=");
+        Serial.println(response);
+        CookComplete = true;
+
+        if (response == "yes")      // THIS NEEDS FIXED - equating doesnt work
+        {
+
+          CookComplete = true;
+          Serial.print("Cookcomplete=");
+          Serial.println(CookComplete);
+        }
+        
+        
+      }
+
+
+      
+    }
+
+}
+  
+}
+
+       
+
 
 
 if (pressed || ChargingActive)  // if button pressed, check server to see if sufficient energy to charge 
@@ -590,8 +665,7 @@ Serial.println("Finish");
   pressed = false;
 }
 
-   
-//setBatteryParameters();
+
 
 //sum_Iout_voltage =0;
 //sum_Vdiv_voltage =0;
@@ -605,18 +679,20 @@ Serial.println("Finish");
  // }
   
   //setVbat();
-  //displayVbat();
+  //displayParameters();
 
 
  // AppendQueryParameters();      //    IF ERROR REPLACE HERE
 
  //LoadActive = true;
 
-  if (LoadActive || ChargingActive) 
+  if (LoadActive || ChargingActive || CookComplete) 
   {
   
-  Serial.println("Load Active");
-  
+    Serial.println("Cooker Turned On");
+     
+    getAverageReadings();
+    displayParameters();
 
     if(GPRSconnect())
     {
@@ -626,10 +702,10 @@ Serial.println("Finish");
       {
         Serial.println("Server Connected!");
 
-       
-        setBatteryParameters();
+        getAverageReadings();
+        displayParameters();
         AppendQueryParameters();
-        displayVbat();
+  
         
         sendParamaters(resource);  // Send Paramaters to Server // Return response - what if server error?
         memset(resource, 0, sizeof resource);
@@ -650,15 +726,18 @@ Serial.println("Finish");
 
 
 
+//delay(5000);
+//getAverageReadings();
+
 
 
     
   
 }
 
-
-
-
+//................................................................................................................................................................
+//................................................................................................................................................................
+//................................................................................................................................................................
 
 bool setPowerBoostKeepOn(int en){
   I2CPower.beginTransmission(IP5306_ADDR);
@@ -882,7 +961,7 @@ void setupDisplay () {
 }
 
 
-void displayVbat() {
+void displayParameters() {
 
 display.clearDisplay();
 
@@ -890,19 +969,41 @@ display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(0, 0);
 
-  display.print("V = ");
-  display.print(Vbat);
-  
-  display.display();      // Show initial text
+  display.print("V= ");
+  display.print(Vbat_filter);
+  display.print(" V");
+
+  display.setCursor(0, 10);
+
+  display.print("I= ");
+  display.print(Iout_avg_filter);
+  display.print(" A");
+
+   
+   display.setCursor(0, 20);
+ 
+  display.print("P= ");
+  display.print(power);
+  display.print(" W");
+
+//  display.setCursor(30, 0);
+//  display.print("E= ");
+//  display.print(kJ_Total);
+//  display.print("kJ"); 
+//  display.display();      // Show initial text
 
 }
 
 void AppendQueryParameters() {
 
+float Vbat_float = float(Vbat_filter);
+Serial.println("Vbat_float =");
+Serial.println(Vbat_float);
 
 
-dtostrf(float(Vbat_filter), 4, 2, CharVbat); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
-dtostrf(float(Iout_avg_filter), 4, 2, CharIout); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
+
+dtostrf(Vbat_float, 4, 2, CharVbat); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
+dtostrf(float(Iout_avg), 4, 2, CharIout); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
 
 Serial.print("CharVbat =");
 Serial.println(CharVbat);
@@ -951,6 +1052,14 @@ strcat(resource,QualArray[8]);
 
 QualDataCollected =false;
 }
+
+if (CookComplete)
+
+{
+  strcat(resource,"&CookComplete=yes");
+  CookComplete = false;
+}
+
 
 Serial.println(resource);
 
@@ -1002,6 +1111,7 @@ if (digitalRead(ButtonPin) ==0)
     if (abs(Iout - Iout_prev) > 1.5)  // if sufficiently large voltage change over 0.6s
     {
 
+      Serial.print("spike");
       LoadChange = true;
       alpha_voltage = 1;
       alpha_current = 1;    // stop filtering
@@ -1028,8 +1138,26 @@ if (LoadChangeCount >=15)
   Iout_filter = filterVal(Iout,Iout_before,alpha_current);
   Iout_before = Iout_filter;
   
-  
+  Serial.println(Iout_filter,3);
   Iout_sum +=Iout_filter;
+
+
+
+  if (Iout_filter>2.5) 
+  {
+      LoadActive = true;
+      //Serial.println("Cooker On");
+      
+  }
+
+  if (LoadActive ==true && Iout_filter <2.5)
+  {
+
+    TurnedOff = true;
+    LoadActive = false;
+    Serial.println("Cooker OFF");
+    
+  }
 
 
   numReadings++;
@@ -1069,19 +1197,14 @@ double ReadVoltage(byte pin){
 } 
 
 
-void setBatteryParameters()
+void getAverageReadings()
 {
 
  Iout_avg = Iout_sum/numReadings;
 
-  Iout_avg_filter =  filterVal(Iout_avg,Iout_avg_before,alpha_current);
-  Iout_avg_before =  Iout_avg_filter;
-  
-  Vdiv_Voltage_avg = Vdiv_Voltage_sum/numReadings;
-
-    if (Iout_avg < 0.2 )        // if off 
+    if (Iout_avg < 0.5 )        // if off 
   {
-    Iout_avg_filter=0;
+    Iout_avg=0;
     InverterOffset = 0;
   }
   else 
@@ -1089,6 +1212,16 @@ void setBatteryParameters()
     InverterOffset = 10.96;
     
   }
+
+  Iout_avg -=InverterOffset;
+ 
+
+  Iout_avg_filter =  filterVal(Iout_avg,Iout_avg_before,alpha_current);
+  Iout_avg_before =  Iout_avg_filter;
+  
+  Vdiv_Voltage_avg = Vdiv_Voltage_sum/numReadings;
+
+
 
 
 
@@ -1113,13 +1246,21 @@ void setBatteryParameters()
   {
     power = 0;
   }
-  
 
+   kJ = (power*Time)/1000;
+   kJ_Total +=kJ; 
+
+  Serial.print("numReadings=");
+  Serial.println(numReadings);
+
+    Serial.print("Iout_sum=");
+  Serial.println(Iout_sum);
+  
   Serial.print(Time);
   Serial.print(",");
   Serial.print(Vbat_filter,3);
   Serial.print(",");
-  Serial.print(Iout_avg_filter,3);
+  Serial.print(Iout_avg,3);
   Serial.print(",");
   Serial.print(power,3);
   Serial.println();
