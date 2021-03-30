@@ -1,12 +1,12 @@
 // Author: Connor Dorward
 // Title : eCook RM System Code
 // Board : ESP32 Wrover Module
-// Function : 
+// Last Date Modified: 30/03/2021
+// Description : 
+// Captures Qualitative and power data, stores on SD card and uploads to google sheets web-app
+
 
 //Library Declerations............................
-// Temperature changing Resistance???
-//Vout of divider increases as ADC connceted
-// Occured with pin 35, seems fine with 34
 
 
 #include <ArduinoHttpClient.h> // For HTTP Communication
@@ -59,7 +59,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // POWER MONITORING
 
 // Reading Variables
-
+double power_filt;
 
 double Time = 0;  //timer interrupt counter
 int numReadings =0;
@@ -72,7 +72,10 @@ int ACS712_Pin = 34;
 double ACS712_Voltage_Filter;
 double ACS712_Voltage =0;
 double offsetVoltage = 2.464;
+
+double Iout_raw;
 double Iout = 0;
+
 double Iout_sum=0;
 double Iout_avg =0;
 double Iout_before;
@@ -85,6 +88,7 @@ double Iout_prev;
 int count=0;
 int LoadChangeCount=0;
 bool TurnedOff = false;
+volatile int offcount = 0;
 
 // Voltage Divider variables
 const int Vdiv_pin= 39;
@@ -143,9 +147,9 @@ const char server[] = "script.google.com"; // domain name: example.com, maker.if
 
 const char redirect_server[] = "script.googleusercontent.com";
 
-const char orig_resource[150] = "/macros/s/AKfycbyrjKicYQ95FYJ-BuXknmZmYs2R9I4_shxpDkWON29lepLnkpcPCY-Uo8BpEKs7TWES_w/exec?";
-char resource[230] = "/macros/s/AKfycbyrjKicYQ95FYJ-BuXknmZmYs2R9I4_shxpDkWON29lepLnkpcPCY-Uo8BpEKs7TWES_w/exec?"; //must be pre-defined buffer
-char staticresource[230] = "/macros/s/AKfycbyrjKicYQ95FYJ-BuXknmZmYs2R9I4_shxpDkWON29lepLnkpcPCY-Uo8BpEKs7TWES_w/exec?Vbat=11.93&Iout=0.00&FuelType=none&MealType=Dinner&Cooker=RiceCooker&Meal=Rice&Portion=5&Method=Boil&Reheating=No&Experience=No&Feedback=No";
+const char orig_resource[150] = "/macros/s/AKfycbwOLMvoR6D2DuV9hv7JdGD2op-NR-gOSg8QKv5Msku9sqIvQfvUqBn7tcAE-nky0PfJTg/exec?";
+char resource[230] = "/macros/s/AKfycbwOLMvoR6D2DuV9hv7JdGD2op-NR-gOSg8QKv5Msku9sqIvQfvUqBn7tcAE-nky0PfJTg/exec?"; //must be pre-defined buffer
+char staticresource[230] = "/macros/s/AKfycbwOLMvoR6D2DuV9hv7JdGD2op-NR-gOSg8QKv5Msku9sqIvQfvUqBn7tcAE-nky0PfJTg/exec?Vbat=11.93&Iout=0.00&FuelType=none&MealType=Dinner&Cooker=RiceCooker&Meal=Rice&Portion=5&Method=Boil&Reheating=No&Experience=No&Feedback=No";
 //const char resource[] = "/macros/s/AKfycbyjiTKgmQOacWeJfgEuF4yKVPsUu_3PjzScw151TH4fJE6CAZAL9GlXug/exec?Vbat=12&Iin=2&Iout=5&Cooker=RiceCooker";         // resource path, for example: /post-data.php
 const int  port = 443;                             // server port number
 
@@ -279,8 +283,13 @@ void printReadings(void);
 
 void setup() {
   
- SerialMon.begin(115200);
+ SerialMon.begin(9600);
+ // setupDisplay();
 
+  delay(1000);
+
+//takeAverage();
+//displayParameters();
 
   Resistor_ratio = R2/(R2+R1);
   pinMode(ACS712_Pin, INPUT);
@@ -291,17 +300,21 @@ void setup() {
   
   //attachInterrupt(ButtonPin, Button_ISR, FALLING);
 
-    SerialBT.begin("ESP32test"); //Bluetooth device name
- // CollectQualitativeData();
+
  // SerialBT.end(); //Bluetooth device name
 
   
   setupTimer();
   setupSIM800L();
-  //GPRSconnect();
- //  setupDisplay();
- //  displayParameters();
- // setupSD();
+
+  setupSD();
+
+   SerialBT.begin("ESP32test"); //Bluetooth device name
+   delay(1000);
+  // SerialBT.available();
+  //CollectQualitativeData();
+   //SerialBT.println("Qualtitative Data Recieved!");
+  
   // Configure the wake up source as timer wake up  
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); // POSSIBLE TIMER DISRUPTION??
 }
@@ -457,9 +470,9 @@ String getResource(const char* server,char* resource)
       SerialBT.println(status);
 
 
-      String body = http_redirect.responseBody();
-      SerialMon.println(F("Response:"));
-      SerialMon.println(body);
+       String body = http_redirect.responseBody();
+      //SerialMon.println(F("Response:"));
+     // SerialMon.println(body);
 
 
       if (!status) 
@@ -473,7 +486,10 @@ String getResource(const char* server,char* resource)
       SerialBT.println("Server disconnected");
       SerialMon.println();
 
-      return body;  
+//String success = "sucess";
+
+      return body;
+      //return success;  
   
 }
 
@@ -503,9 +519,9 @@ void sendParamaters(char* resource)
       SerialBT.println(status);
 
 
-      String body = http.responseBody();
-      SerialMon.println(F("Response:"));
-      SerialMon.println(body);
+     // String body = http.responseBody();
+    //  SerialMon.println(F("Response:"));
+     // SerialMon.println(body);
 
 
       if (!status) 
@@ -531,13 +547,20 @@ void sendParamaters(char* resource)
 void loop() 
 
 {
+
+
+  
 //SerialMon.println("MainLoop");
- 
+//delay(1000);
+//
+//takeAverage();
+//displayParameters();
 
+/*
 
-if (TurnedOff) // Set timer so that this times out after X seconds/minutes
+if (TurnedOff && !CookComplete) // Set timer so that this times out after X seconds/minutes
 {
-  SerialBT.begin("ESP32test"); //Bluetooth device name
+  //SerialBT.begin("ESP32test"); //Bluetooth device name
   SerialBT.println("Are you finished Cooking?");
 
    char incomingChar;
@@ -601,16 +624,16 @@ if (SerialBT.available()){
 }
   
 }
-
+*/
        
 
-
+ChargingActive = true;
 
 if (pressed || ChargingActive)  // if button pressed, check server to see if sufficient energy to charge 
                                 // or if in state of charging , continually check to see if sufficient energy
 {
 // display....
-Serial.printf("Button 1 has been pressed \n",ButtonPresses);
+//Serial.printf("Button 1 has been pressed \n",ButtonPresses);
 
 if(GPRSconnect())
 {
@@ -635,11 +658,21 @@ Serial.println("GPRS Connected!");
         Serial.println("Connected to Redirect Server!");
         GridCapacity = getResource(redirect_server,redirect_resource);
 
+        SerialBT.print("GridCapacity=");
+         SerialBT.print(GridCapacity);
+         SerialBT.println(" %");
+         
+        
+        Serial.print("GridCapacity=");
+        Serial.print(GridCapacity);
+        Serial.println(" %");
+        
       if (GridCapacity != "fail")
       {
        GridCapacity_int = GridCapacity.toInt();
         if (GridCapacity_int <90)
         {
+          
            Serial.println("Charging Enabled");
            digitalWrite(Relay_Pin, HIGH);
            ChargingActive = true;
@@ -649,7 +682,7 @@ Serial.println("GPRS Connected!");
         {
            Serial.println("Charging Disabled");
            digitalWrite(Relay_Pin, LOW);
-           ChargingActive = false;
+           //ChargingActive = false;
           
         }
       }
@@ -686,12 +719,32 @@ Serial.println("Finish");
 
  //LoadActive = true;
 
+
+/*
+
   if (LoadActive || ChargingActive || CookComplete) 
   {
   
     Serial.println("Cooker Turned On");
-     
-    takeAverage();
+
+   takeAverage();
+  delay(1500);
+   takeAverage();*
+  //printReadings();
+                                    
+//  numReadings=0;
+// Iout_sum=0;
+//  Vdiv_Voltage_sum=0;
+
+ //   delay(2000); 
+//    takeAverage();
+    
+   // Serial.println("..........................................................................");
+   // printReadings();
+   // Serial.println("..........................................................................");
+    logSDCard();
+    AppendQueryParameters();
+    
    // displayParameters();
 
     if(GPRSconnect())
@@ -702,16 +755,14 @@ Serial.println("Finish");
       {
         Serial.println("Server Connected!");
 
-          numReadings=0;
-          Iout_sum=0;
-          Vdiv_Voltage_sum=0;
 
-          delay(1000);
+          //delay(1000);
 
-        takeAverage();
-        printReadings();
+        //takeAverage();
+
+        
         //displayParameters();
-        AppendQueryParameters();
+        //AppendQueryParameters();
   
         
         sendParamaters(resource);  // Send Paramaters to Server // Return response - what if server error?
@@ -736,6 +787,17 @@ Serial.println("Finish");
 //takeAverage();
 //printReadings();
 
+
+    
+//
+//
+//delay(1000);
+//takeAverage();
+//printReadings();
+//logSDCard();
+
+
+*/
 
     
   
@@ -944,7 +1006,7 @@ void appendFile(fs::FS &fs, const char * path, const char * message) {
 
 
 void logSDCard() {
-  dataMessage = String(Vbat) + "," + String(Iin) + "," + String(Iout)+ "\r\n";
+  dataMessage = String(Vbat_filter) + "," + String(Iout_avg) + "," + String(power)+ "\r\n";
   Serial.print("Save data: ");
   Serial.println(dataMessage);
   appendFile(SD, "/data.txt", dataMessage.c_str());
@@ -1009,7 +1071,7 @@ Serial.println(Vbat_float);
 
 
 dtostrf(Vbat_float, 4, 2, CharVbat); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
-dtostrf(float(Iout_avg), 4, 2, CharIout); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
+dtostrf(float(Iout_avg_filter), 4, 2, CharIout); //Convert float Vbat to char array 'CharVbat' 4 is mininum width, 2 is precision
 
 Serial.print("CharVbat =");
 Serial.println(CharVbat);
@@ -1075,6 +1137,7 @@ hw_timer_t * timer = NULL;
 
 // Dont include anything float related
 
+double ACS712_Voltage_filter, ACS712_Voltage_bef;
 
 void IRAM_ATTR onTimer() // Read values every 0.2s
                          // If spike in current, set relay off
@@ -1083,10 +1146,18 @@ void IRAM_ATTR onTimer() // Read values every 0.2s
                          // two variables on server..reading made vs reading recieved
 {
 
-if (digitalRead(ButtonPin) ==0)
-{
-  pressed = true;
-}
+//if (digitalRead(ButtonPin) ==0)
+//{
+ // pressed = true;
+//}
+
+
+//if (numReadings >= 5) 
+//{
+//
+//  takeAverage();
+//}
+
 
   count++;
 
@@ -1097,48 +1168,40 @@ if (digitalRead(ButtonPin) ==0)
  // Serial.println(Vdiv_Voltage,3);
 
   //NO LOAD
-  //Vmultimeter = 0.618
-  //Vmeasured = 0.633
 
-  //LOAD
-  //Vmultimeter = 0.595
-  //Vmeasured = 0.601
-
-  //Vbat NO LOAD
-  //Vmultimeter = 12.80
-  //Vmeasured = 13.02
-
-
-  //Vbat LOAD
-  //Vmultimeter = 12.30
-  //Vmeasured = 12.50
 
   
   Vdiv_Voltage_sum +=Vdiv_Voltage;
 
+  double Vbat_ = Vdiv_Voltage/Resistor_ratio;
+
+  
 
   // Current - voltage and avareaged current gerts filtered - double filtered
   
-  ACS712_Voltage = ReadVoltage(ACS712_Pin)-2.53;// - offsetVoltage; //
+  ACS712_Voltage = ReadVoltage(ACS712_Pin)-2.51;// - offsetVoltage; //
 
+  ACS712_Voltage_filter = filterVal(ACS712_Voltage,ACS712_Voltage_bef,alpha_current);
+ ACS712_Voltage_bef = ACS712_Voltage_filter;
   
-  Iout = ACS712_Voltage*10;        // 100mV/A    so 1V = 10A
+  Iout = ACS712_Voltage_filter*10;        // 100mV/A    so 1V = 10A
+  Iout_raw = ACS712_Voltage*10; 
 
-  Serial.println(ACS712_Voltage,4);
+  //Serial.println(ACS712_Voltage,4);
 
       if (count ==1)
   {
   
-    Iout_prev = Iout;
+    Iout_prev = Iout_raw;
     
   }
   if (count >=10)             // if large change over 1s
   {
   
-    if (abs(Iout - Iout_prev) > 1.5)  // if sufficiently large voltage change over 0.6s
+    if (abs(Iout_raw - Iout_prev) > 1.5)  // if sufficiently large voltage change over 0.6s
     {
 
-      Serial.print("spike");
+      //Serial.print("spike");
       LoadChange = true;
       alpha_voltage = 1;
       alpha_current = 1;    // stop filtering
@@ -1148,28 +1211,30 @@ if (digitalRead(ButtonPin) ==0)
     count = 0;
   }
 
+// Dynamic Filtering
+
 if (LoadChange ==true)
 {
   LoadChangeCount++;
 
 
-if (LoadChangeCount >=5 && LoadChangeCount <10)
+if (LoadChangeCount >=10 && LoadChangeCount <15)
 {
-  //Serial.println("reset");
+ // Serial.println("between 10 and 15");
  // LoadChange=false;
-  LoadChangeCount=0;
-  alpha_voltage = 0.3;
-  alpha_current = 0.2; 
+  
+  alpha_voltage = 0.5;
+  alpha_current = 0.5; 
 }
-else if (LoadChangeCount >=10)
+else if (LoadChangeCount >=15)
 
 {
-  Serial.println("reset");
+ // Serial.println("reset");
   LoadChange=false;
   LoadChangeCount=0;
-  alpha_voltage = 0.1;
+  alpha_voltage = 0.05;
   alpha_current = 0.05; 
-
+  
   
 }
 
@@ -1182,9 +1247,38 @@ else if (LoadChangeCount >=10)
   //Serial.println(Iout_filter,3);
   Iout_sum +=Iout_filter;
 
+//  Serial.println();
+//  Serial.print("Vbat = ");  
+//  Serial.println(Vbat_,3);
+//  Serial.print("Iout = ");  
+//  Serial.println(Iout_filter,3);
+//  Serial.print("Power = ");  
+//  Serial.print(Vbat_*Iout_filter,3);
+//  Serial.println();
+ // Serial.println();
 
 
-  if (Iout_filter>2.5) 
+  if (LoadActive ==true && Iout_filter <0.2)
+  {
+
+//    offcount++;
+//
+//    if (offcount>30)
+//    {
+      
+    //offcount=0;
+    LoadChange= true;
+    TurnedOff = true;
+    LoadActive = false;
+    Serial.println("Cooker OFF");
+    Serial.print("Iout_filter=");
+    Serial.println(Iout_filter,3);
+    SerialBT.println("Cooker turned OFF");
+
+    //}
+  }
+  
+  else if (Iout_filter>2.5) 
   {
 
       if (!LoadActive)
@@ -1200,19 +1294,13 @@ else if (LoadChangeCount >=10)
       
   }
 
-  if (LoadActive ==true && Iout_filter <1)
-  {
 
-    TurnedOff = true;
-    LoadActive = false;
-    Serial.println("Cooker OFF");
-    SerialBT.println("Cooker turned OFF");
-  }
 
   //Serial.println(Iout_filter);
   numReadings++;
   Time+=0.2;
 
+  //Serial.println(Iout_filter,3);
   
 }
 
@@ -1264,11 +1352,20 @@ void takeAverage()
     
   }
 
+      if (Iout_avg >2 && Iout_avg <3.3 )
+            {
+                Iout_avg = 3.32;
+
+            }
+
   //Iout_avg -=InverterOffset;
  
 
   Iout_avg_filter =  filterVal(Iout_avg,Iout_avg_before,alpha_current);
   Iout_avg_before =  Iout_avg_filter;
+
+
+ 
   
   Vdiv_Voltage_avg = Vdiv_Voltage_sum/numReadings;
 
@@ -1291,7 +1388,9 @@ void takeAverage()
   Vbat_filter = filterVal(Vbat,Vbat_before,alpha_voltage) ;
   Vbat_before = Vbat_filter;
   
-  power = Vbat_filter*Iout_avg_filter - InverterOffset;// -3;
+  power = Vbat_filter*Iout_avg - InverterOffset;// -3;
+
+  power_filt = Vbat_filter*Iout_avg_filter - InverterOffset;
 
   if(power <0)
   {
@@ -1310,19 +1409,27 @@ void takeAverage()
 void printReadings()
 {
 
-  Serial.print("numReadings=");
-  Serial.println(numReadings);
-
-  Serial.print("Iout_sum=");
-  Serial.println(Iout_sum);
-  
+//  Serial.print("numReadings=");
+//  Serial.println(numReadings);
+//
+//  Serial.print("Iout_sum=");
+//  Serial.println(Iout_sum);
+//  
   Serial.print(Time);
   Serial.print(",");
   Serial.print(Vbat_filter,3);
   Serial.print(",");
   Serial.print(Iout_avg,3);
   Serial.print(",");
+  Serial.print(Iout_avg_filter,3);
+  Serial.print(",");
   Serial.print(power,3);
+  Serial.print(",");
+  Serial.print(power_filt,3);
+  Serial.print(",");
+  Serial.print(alpha_voltage,3);
+    Serial.print(",");
+  Serial.print(alpha_current,3);
   Serial.println();
   
 }
